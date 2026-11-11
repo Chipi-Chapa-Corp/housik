@@ -43,18 +43,17 @@ export const actions: Actions = {
     const f = await event.request.formData();
     try {
       rateLimit(`login:${event.getClientAddress()}`);
-      const username = text(f, 'username', 40).toLowerCase(),
+      const name = text(f, 'name', 20),
+        username = name.toLowerCase(),
         pass = password(f);
-      if (!/^[a-z0-9_.-]+$/.test(username))
-        throw new Error('Username: letters, numbers, dot, dash or underscore.');
       let user = db
         .prepare('SELECT id,password FROM users WHERE username=? COLLATE NOCASE')
         .get(username) as { id: string; password: string } | undefined;
       if (user && !verify(pass, user.password))
-        throw new Error('Incorrect password for this username.');
+        throw new Error('Incorrect password for this name.');
       if (!user) {
         const userId = id();
-        db.prepare('INSERT INTO users VALUES(?,?,?,?)').run(userId, username, hash(pass), username);
+        db.prepare('INSERT INTO users VALUES(?,?,?,?)').run(userId, username, hash(pass), name);
         user = { id: userId, password: '' };
       }
       createSession(event, user.id);

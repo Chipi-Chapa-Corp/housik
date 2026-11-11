@@ -727,15 +727,7 @@
 </Modal>
 <Modal onClose={() => (modal = '')} open={modal === 'invite'} title="Invite"
   ><form method="POST" action="?/member" use:enhance={submit} class="stack">
-    <label
-      >Username<input
-        name="username"
-        bind:value={memberUsername}
-        required
-        maxlength="40"
-        pattern="[a-zA-Z0-9_.-]+"
-      /></label
-    >
+    <label>Name<input name="name" bind:value={memberUsername} required maxlength="20" /></label>
     {#if message}<p class="form-error" role="alert">{message}</p>{/if}<button
       class="btn primary full"
       disabled={busy}>Invite to trip <Plus size={16} /></button
@@ -757,7 +749,7 @@
       <input type="hidden" name="to" value={data.session.member_id} />
       <div class="received-by">
         <span>Received by</span><NameBubble
-          name={data.session.user.username}
+          name={data.session.user.name}
           color={person(data.session.member_id!).color}
         />
       </div>

@@ -1,11 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
-const owner = 'alex',
-  guest = 'jamie';
+const owner = 'Álex Novák! +'.padEnd(20, '!'),
+  guest = 'Jamie O’Neil & Co.';
 const pass = 'weekend-test-password';
 async function login(page: Page, name: string) {
   await page.goto('/');
   await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
-  await page.getByLabel('Username', { exact: true }).fill(name);
+  await expect(page.getByLabel('Name', { exact: true })).toHaveAttribute('maxlength', '20');
+  await page.getByLabel('Name', { exact: true }).fill(name);
   await page.getByLabel('Password', { exact: true }).fill(pass);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.locator('.trips-home')).toBeVisible();
@@ -25,6 +26,10 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await page.goto('/');
   await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
   await page.screenshot({ path: 'test-results/signin-desktop.png', fullPage: true });
+  const tooLong = await page.request.post('/?/login', {
+    form: { name: 'a'.repeat(21), password: pass }
+  });
+  expect(tooLong.status()).toBe(400);
   await login(page, owner);
   const cookies = await page.context().cookies();
   expect(cookies.find((c) => c.name === 'housik')?.httpOnly).toBe(true);
@@ -63,7 +68,12 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await page.getByRole('button', { name: 'People', exact: true }).first().click();
   await page.getByRole('button', { name: 'Invite', exact: true }).click();
   dialog = page.locator('dialog[open]');
-  await dialog.getByLabel('Username', { exact: true }).fill(guest);
+  const tooLongInvite = await page.request.post(`${tripPath}?/member`, {
+    form: { name: 'a'.repeat(21) }
+  });
+  expect(tooLongInvite.status()).toBe(400);
+  await expect(dialog.getByLabel('Name', { exact: true })).toHaveAttribute('maxlength', '20');
+  await dialog.getByLabel('Name', { exact: true }).fill(guest);
   await dialog.getByRole('button', { name: 'Invite to trip' }).click();
   await expect(page.locator('dialog[open]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Expenses', exact: true }).first().click();

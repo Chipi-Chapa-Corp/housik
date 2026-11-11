@@ -40,16 +40,14 @@ export const actions: Actions = {
   },
   member: wrap((event, f) => {
     const s = requireSession(event, true),
-      username = text(f, 'username', 40).toLowerCase();
-    const name = username;
-    if (!/^[a-z0-9_.-]+$/.test(username))
-      throw new Error('Username: letters, numbers, dot, dash or underscore.');
+      name = text(f, 'name', 20),
+      username = name.toLowerCase();
     if (
       db
         .prepare('SELECT 1 FROM members WHERE trip_id=? AND username=? COLLATE NOCASE')
         .get(s.trip_id, username)
     )
-      throw new Error('Username is already invited.');
+      throw new Error('Name is already invited.');
     const count = (
       db.prepare('SELECT COUNT(*) AS n FROM members WHERE trip_id=?').get(s.trip_id) as {
         n: number;

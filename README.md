@@ -92,11 +92,11 @@ cp .env.example .env
 npm run dev
 ```
 
-Open the URL printed by Vite. Enter a username and password; a new username creates an account on first sign-in. There is no separate registration screen. Existing usernames require their original password.
+Open the URL printed by Vite. Enter a name (up to 20 characters) and password; a new name creates an account on first sign-in. There is no separate registration screen. Existing names require their original password.
 
 ## What works
 
-- Multiple trips per account; globally unique trip names and username invitations.
+- Multiple trips per account; globally unique trip names and name invitations.
 - Trip owners manage people, rent, purchases, receipt imports and tags. Only a payment’s receiver can confirm or undo it, including when the sender is the trip owner.
 - Invited people can read the trip and change **only their own** expense participation: default, include, exclude, cover fully, or contribute extra. They cannot edit other people or confirm payments to another person.
 - Rent can be entered as a total or a nightly rate × the trip's nights. Trip settings accept an HTTP(S) location link; the house/place name becomes clickable.
@@ -108,7 +108,7 @@ Open the URL printed by Vite. Enter a username and password; a new username crea
 
 ## Sharing
 
-Invite a person's username from the trip. They may already have an account or create it later using that username. Their trip appears after sign-in. Usernames are case-insensitive. The URL alone does not grant access. Invitations apply immediately; include only usernames belonging to the intended person.
+Invite a person's name from the trip. They may already have an account or create it later using that name. Their trip appears after sign-in. Names are case-insensitive. The URL alone does not grant access. Invitations apply immediately; include only names belonging to the intended person.
 
 ## Currency and interface
 

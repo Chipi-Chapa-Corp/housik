@@ -40,14 +40,7 @@
       <section class="signin-card">
         <h1>Sign in</h1>
         <form method="POST" action="?/login" use:enhance={submit} class="stack">
-          <label
-            >Username<input
-              name="username"
-              autocomplete="username"
-              required
-              maxlength="40"
-              pattern="[a-zA-Z0-9_.-]+"
-            /></label
+          <label>Name<input name="name" autocomplete="username" required maxlength="20" /></label
           ><label
             >Password<input
               type="password"
@@ -75,7 +68,7 @@
           }}><Plus size={16} />New trip</button
         >
         <div class="header-right">
-          <NameBubble name={data.user.username} />
+          <NameBubble name={data.user.name} />
           <form method="POST" action="?/logout">
             <button class="icon-btn" aria-label="Sign out"><LogOut size={20} /></button>
           </form>
