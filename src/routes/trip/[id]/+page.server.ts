@@ -48,7 +48,7 @@ export const actions: Actions = {
     redirect(303, '/');
   },
   member: wrap((event, f) => {
-    const s = requireSession(event, true),
+    const s = requireSession(event),
       name = text(f, 'name', 20),
       username = name.toLowerCase();
     if (
@@ -71,7 +71,7 @@ export const actions: Actions = {
     );
   }),
   expense: wrap(async (event, f) => {
-    const s = requireSession(event, true),
+    const s = requireSession(event),
       expenseId = String(f.get('id') || '') || id();
     const title = text(f, 'title'),
       payer = text(f, 'payer'),
@@ -146,13 +146,14 @@ export const actions: Actions = {
         db.prepare('INSERT INTO expense_tags VALUES(?,?)').run(expenseId, member);
       if (memberIds) {
         db.prepare('DELETE FROM expense_members WHERE expense_id=?').run(expenseId);
-        for (const member of memberIds) db.prepare('INSERT INTO expense_members VALUES(?,?)').run(expenseId, member);
+        for (const member of memberIds)
+          db.prepare('INSERT INTO expense_members VALUES(?,?)').run(expenseId, member);
       }
       assertAllocations(s.trip_id);
     })();
   }),
   deleteExpense: wrap((event, f) => {
-    const s = requireSession(event, true);
+    const s = requireSession(event);
     db.prepare('DELETE FROM expenses WHERE id=? AND trip_id=?').run(text(f, 'id'), s.trip_id);
   }),
   choice: wrap(async (event, f) => {
@@ -181,7 +182,7 @@ export const actions: Actions = {
     })();
   }),
   tag: wrap((event, f) => {
-    const s = requireSession(event, true),
+    const s = requireSession(event),
       name = text(f, 'name', 40),
       tagId = String(f.get('id') || '') || id();
     const people = [...new Set(f.getAll('members').map(String))];
@@ -206,7 +207,7 @@ export const actions: Actions = {
     })();
   }),
   deleteTag: wrap((event, f) => {
-    const s = requireSession(event, true);
+    const s = requireSession(event);
     db.transaction(() => {
       db.prepare('DELETE FROM tags WHERE id=? AND trip_id=?').run(text(f, 'id'), s.trip_id);
       assertAllocations(s.trip_id);
@@ -243,7 +244,7 @@ export const actions: Actions = {
     db.prepare('DELETE FROM payments WHERE id=? AND trip_id=?').run(paymentId, s.trip_id);
   }),
   settings: wrap((event, f) => {
-    const s = requireSession(event, true),
+    const s = requireSession(event),
       name = text(f, 'name', 60),
       start = validDate(text(f, 'start')),
       nights = tripNights(start, text(f, 'departure'));
@@ -262,11 +263,11 @@ export const actions: Actions = {
     );
   }),
   importReceipts: wrap(async (event, f) => {
-    const session = requireSession(event, true);
+    const session = requireSession(event);
     await commitReceipts(session.trip_id, JSON.parse(String(f.get('receipts') || '[]')));
   }),
   importReceipt: wrap(async (event, f) => {
-    const s = requireSession(event, true);
+    const s = requireSession(event);
     await commitReceipt(s.trip_id, f);
   })
 };

@@ -68,7 +68,6 @@
   let viewedReceipt = $state<{ src: string; mime: string; name: string } | null>(null);
   let memberUsername = $state('');
   let settingsArrival = $state('');
-  const owner = $derived(data.session.role === 'owner');
   const total = $derived(data.expenses.reduce((s, e) => s + e.amount, 0));
   const mine = $derived(data.ledger.find((r) => r.id === data.session.member_id)!);
   const outstanding = $derived(data.ledger.reduce((s, e) => s + Math.max(0, e.net), 0));
@@ -252,11 +251,9 @@
     <header class="trip-heading">
       <div class="trip-title-row">
         <h1>{data.trip.name}</h1>
-        {#if owner}<button
-            class="icon-btn"
-            aria-label="Trip settings"
-            onclick={() => open('settings')}><Settings2 size={20} /></button
-          >{/if}
+        <button class="icon-btn" aria-label="Trip settings" onclick={() => open('settings')}
+          ><Settings2 size={20} /></button
+        >
       </div>
       <div class="trip-meta-row">
         <p class="trip-subtitle">
@@ -307,9 +304,9 @@
             <div>
               <h2>Expenses</h2>
             </div>
-            {#if owner}<button class="btn primary" onclick={() => addExpense()}
-                ><Plus size={16} />Add expense</button
-              >{/if}
+            <button class="btn primary" onclick={() => addExpense()}
+              ><Plus size={16} />Add expense</button
+            >
           </div>
           <div class="expense-toolbar">
             <div class="filters" aria-label="Expense type">
@@ -319,15 +316,15 @@
                 >{/each}
             </div>
             <div class="toolbar-right">
-              {#if owner}<button
-                  class="icon-btn"
-                  aria-label="Tags"
-                  title="Tags"
-                  onclick={() => {
-                    editingTag = null;
-                    open('tags');
-                  }}><TagIcon size={17} /></button
-                >{/if}<label class="search-box"
+              <button
+                class="icon-btn"
+                aria-label="Tags"
+                title="Tags"
+                onclick={() => {
+                  editingTag = null;
+                  open('tags');
+                }}><TagIcon size={17} /></button
+              ><label class="search-box"
                 ><Search size={16} /><input
                   aria-label="Search expenses"
                   placeholder="Search"
@@ -390,13 +387,13 @@
           <div>
             <h2>People</h2>
           </div>
-          {#if owner}<button
-              class="btn primary"
-              onclick={() => {
-                memberUsername = '';
-                open('invite');
-              }}><Plus size={16} />Invite</button
-            >{/if}
+          <button
+            class="btn primary"
+            onclick={() => {
+              memberUsername = '';
+              open('invite');
+            }}><Plus size={16} />Invite</button
+          >
         </div>
         <div class="people-grid">
           {#each data.ledger as row}<article class="person-card">
@@ -519,7 +516,7 @@
           <div>
             <h2>Receipts</h2>
           </div>
-          {#if owner}<button class="btn primary" onclick={newReceipt}
+          {#if data.session.member_id}<button class="btn primary" onclick={newReceipt}
               ><Upload size={16} />Add receipt</button
             >{/if}
         </div>
@@ -692,30 +689,30 @@
         disabled={busy}>Update share <Check size={16} /></button
       >
     </form>
-    {#if owner}<div class="detail-actions">
-        <button class="text-btn" onclick={() => editExpense(current!)}
-          ><Pencil size={14} />Edit expense</button
+    <div class="detail-actions">
+      <button class="text-btn" onclick={() => editExpense(current!)}
+        ><Pencil size={14} />Edit expense</button
+      >
+      <form
+        method="POST"
+        action="?/deleteExpense"
+        use:enhance={() => {
+          busy = true;
+          return async ({ result, update }) => {
+            busy = false;
+            if (result.type === 'success') {
+              modal = '';
+              await refreshAll();
+            } else await update();
+          };
+        }}
+      >
+        <input type="hidden" name="id" value={current.id} /><button
+          class="text-btn danger"
+          disabled={busy}><Trash2 size={14} />Delete</button
         >
-        <form
-          method="POST"
-          action="?/deleteExpense"
-          use:enhance={() => {
-            busy = true;
-            return async ({ result, update }) => {
-              busy = false;
-              if (result.type === 'success') {
-                modal = '';
-                await refreshAll();
-              } else await update();
-            };
-          }}
-        >
-          <input type="hidden" name="id" value={current.id} /><button
-            class="text-btn danger"
-            disabled={busy}><Trash2 size={14} />Delete</button
-          >
-        </form>
-      </div>{/if}{/if}
+      </form>
+    </div>{/if}
 </Modal>
 <Modal onClose={() => (modal = '')} open={modal === 'invite'} title="Invite"
   ><form method="POST" action="?/member" use:enhance={submit} class="stack">

@@ -185,7 +185,7 @@ test('EUR amounts stay editable in EUR while ledger totals use CZK', async ({ pa
   await expect(dialog.locator('.receipt-subtotal strong')).toContainText('34,75');
   await page.screenshot({ path: 'test-results/currency-receipt-mobile.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await dialog.getByRole('button', { name: 'Add 2 items', exact: true }).click();
+  await dialog.getByRole('button', { name: /^Add 2 items for/ }).click();
   await expect(page.locator('.receipt-card').filter({ hasText: 'Mixed receipt' })).toContainText(
     '34,75'
   );

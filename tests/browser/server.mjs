@@ -5,11 +5,17 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const calls = [];
+let activeScans = 0,
+  maximumScans = 0;
 const fixture = process.env.HOUSIK_RECEIPT_FIXTURE === 'true';
 function saveCalls() {
   if (fixture) {
     mkdirSync(process.env.HOUSIK_TEST_DIR, { recursive: true });
     writeFileSync(join(process.env.HOUSIK_TEST_DIR, 'provider-calls.json'), JSON.stringify(calls));
+    writeFileSync(
+      join(process.env.HOUSIK_TEST_DIR, 'provider-stats.json'),
+      JSON.stringify({ activeScans, maximumScans })
+    );
   }
 }
 saveCalls();
@@ -19,12 +25,18 @@ const provider = createServer(async (request, response) => {
     for await (const chunk of request) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
     calls.push(body);
+    activeScans++;
+    maximumScans = Math.max(maximumScans, activeScans);
     saveCalls();
     const content = body.input[0].content[0];
     const bytes = Buffer.from((content.image_url || content.file_data).split(',')[1], 'base64');
     const failed = bytes.toString().endsWith('fail');
     const empty = bytes.toString().endsWith('empty');
-    await new Promise((resolve) => setTimeout(resolve, failed ? 1800 : 650));
+    await new Promise((resolve) =>
+      setTimeout(resolve, failed || bytes.toString().includes('parallel-') ? 1800 : 650)
+    );
+    activeScans--;
+    saveCalls();
     response.writeHead(failed ? 503 : 200, { 'content-type': 'application/json' });
     response.end(
       JSON.stringify(

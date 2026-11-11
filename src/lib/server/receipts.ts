@@ -109,6 +109,9 @@ export async function commitReceipts(tripId: string, raw: unknown) {
         .get(entry.draft, tripId) as
         { uploader_id: string; filename: string; mime: string } | undefined;
       if (!draft) throw new ReceiptError('Upload the receipt again.');
+      const kind = entry.kind ?? 'product';
+      if (!['product', 'other', 'rent'].includes(kind))
+        throw new ReceiptError('Choose a receipt type.');
       const merchant = String(entry.merchant || '')
         .trim()
         .slice(0, 80);
@@ -146,7 +149,7 @@ export async function commitReceipts(tripId: string, raw: unknown) {
           };
         })
       );
-      return { ...draft, id: entry.draft, merchant, payer, members, items, date };
+      return { ...draft, id: entry.draft, merchant, kind, payer, members, items, date };
     })
   );
   db.transaction(() => {
@@ -177,7 +180,7 @@ export async function commitReceipts(tripId: string, raw: unknown) {
           item.title,
           item.amount,
           receipt.payer,
-          'product',
+          receipt.kind,
           tagId,
           receipt.id,
           '',
@@ -200,6 +203,7 @@ export async function commitReceipt(tripId: string, form: FormData) {
     {
       draft: String(form.get('draft')),
       merchant: form.get('merchant'),
+      kind: form.get('kind') || 'product',
       date: form.get('date') || today(),
       members: form.getAll('members').map(String),
       items: Array.isArray(items)

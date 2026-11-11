@@ -10,7 +10,7 @@
       aria-pressed={currency === option}
       onclick={() => (currency = option)}
     >
-      {option === 'CZK' ? 'Kc' : 'E'}
+      {option === 'CZK' ? 'Kč' : '€'}
     </button>
   {/each}
 </div>

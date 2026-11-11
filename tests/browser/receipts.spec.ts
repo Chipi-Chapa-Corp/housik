@@ -89,7 +89,7 @@ test('batch previews, per-file scanning, manual failure review and atomic import
     await dialog.getByRole('button', { name: `Remove receipt ${name}.png`, exact: true }).click();
   await expect(dialog.locator('.receipt-selection-card')).toHaveCount(2);
   await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(dialog.locator('.neural-overlay').first()).toBeVisible();
+  await expect(dialog.locator('.receipt-scan').first()).toBeVisible();
   await expect(dialog.locator('.receipt-selection-card[data-status=succeeded]')).toHaveCount(1);
   await page.screenshot({ path: '.test-data/receipt-work/batch-processing.png', fullPage: true });
   await expect(dialog.getByRole('heading', { name: 'Review receipts', exact: true })).toBeVisible();
@@ -122,8 +122,10 @@ test('batch previews, per-file scanning, manual failure review and atomic import
     'aria-pressed',
     'true'
   );
-  await expect(first.getByRole('button', { name: 'EUR', exact: true })).toHaveText('E');
-  await expect(first.getByRole('button', { name: 'CZK', exact: true })).toHaveText('Kc');
+  await expect(first.getByRole('button', { name: 'EUR', exact: true })).toHaveText('€');
+  await expect(first.getByRole('button', { name: 'CZK', exact: true })).toHaveText('Kč');
+  await first.getByRole('button', { name: 'Rent', exact: true }).click();
+  await failed.getByRole('button', { name: 'Extra', exact: true }).click();
   await expect(failed.getByLabel('Item name', { exact: true })).toHaveValue('');
   await expect(failed.getByAltText('fail.png', { exact: true })).toBeVisible();
   await first.getByLabel('Item amount', { exact: true }).fill('1.50');
@@ -132,6 +134,9 @@ test('batch previews, per-file scanning, manual failure review and atomic import
   await first.getByRole('button', { name: 'Remove item', exact: true }).last().click();
   await failed.getByLabel('Item name', { exact: true }).fill('Manual bread');
   await failed.getByLabel('Item amount', { exact: true }).fill('3.50');
+  await expect(dialog.getByRole('button', { name: /^Add 2 items for/ })).toHaveText(
+    /Add 2 items for 41,00\sKč/
+  );
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 1050 });
     const layout = await dialog.evaluate((el) => {
@@ -189,10 +194,14 @@ test('batch previews, per-file scanning, manual failure review and atomic import
   expect((await guestContext.request.get(`${tripPath}/receipt/${drafts[0].id}`)).status()).toBe(
     403
   );
-  await page.request.post(`${tripPath}?/member`, { form: { name: 'Batch guest' } });
-  expect((await guestContext.request.get(`${tripPath}/receipt/${drafts[0].id}`)).status()).toBe(
-    200
-  );
+  expect(
+    (
+      await guestContext.request.post(`${tripPath}/scan`, {
+        headers: { origin },
+        multipart: { file: files[0] }
+      })
+    ).status()
+  ).toBe(403);
   expect(
     (
       await guestContext.request.delete(`${tripPath}/receipt/${drafts[0].id}`, {
@@ -200,19 +209,17 @@ test('batch previews, per-file scanning, manual failure review and atomic import
       })
     ).status()
   ).toBe(403);
+  await page.request.post(`${tripPath}?/member`, { form: { name: 'Batch guest' } });
+  expect((await guestContext.request.get(`${tripPath}/receipt/${drafts[0].id}`)).status()).toBe(
+    200
+  );
   expect(
     (
-      await guestContext.request.post(`${tripPath}/scan`, {
-        headers: { origin },
-        multipart: { payer: drafts[0].uploader_id, file: files[0] }
+      await guestContext.request.post(`${tripPath}?/importReceipts`, {
+        form: { receipts: JSON.stringify([{ draft: drafts[0].id }]) }
       })
     ).status()
-  ).toBe(403);
-  expect(
-    (
-      await guestContext.request.post(`${tripPath}?/importReceipts`, { form: { receipts: '[]' } })
-    ).status()
-  ).toBe(403);
+  ).toBe(400);
   expect(
     (
       await page.request.delete(`${tripPath}/receipt/${drafts[0].id}`, {
@@ -247,11 +254,21 @@ test('batch previews, per-file scanning, manual failure review and atomic import
     fullPage: true
   });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await dialog.getByRole('button', { name: 'Add 2 items', exact: true }).click();
+  await dialog.getByRole('button', { name: /^Add 2 items for/ }).click();
   await expect(page.locator('dialog[open]')).toHaveCount(0);
   await expect(page.locator('.receipt-card')).toHaveCount(2);
   expect(rows('SELECT * FROM receipts WHERE trip_id=?', tripId)).toHaveLength(2);
   expect(rows('SELECT * FROM receipt_drafts WHERE trip_id=?', tripId)).toHaveLength(0);
+  expect(
+    rows(
+      'SELECT title,kind FROM expenses WHERE receipt_id IN (?,?) ORDER BY title',
+      drafts[0].id,
+      drafts[1].id
+    )
+  ).toEqual([
+    { title: 'Manual bread', kind: 'other' },
+    { title: 'Scanned coffee', kind: 'rent' }
+  ]);
   expect(
     (
       await page.request.post(`${tripPath}?/importReceipts`, {
@@ -314,7 +331,7 @@ test('empty scans remain attached, receipt removal deletes only its draft, and t
   await expect.poll(() => rows('SELECT * FROM receipt_drafts WHERE id=?', empty.id).length).toBe(0);
   expect(existsSync(join(directory(), 'receipts', empty.id))).toBe(false);
   expect((await page.request.get(`${tripPath}/receipt/${empty.id}`)).status()).toBe(404);
-  await dialog.getByRole('button', { name: 'Add 1 items', exact: true }).click();
+  await dialog.getByRole('button', { name: /^Add 1 item for/ }).click();
   await expect(page.locator('.receipt-card')).toHaveCount(1);
   expect((await page.request.get(`${tripPath}/receipt/${success.id}`)).status()).toBe(200);
 });
@@ -388,7 +405,7 @@ test('receipt defaults, item overrides and undetected currency survive import', 
   await page.setViewportSize({ width: 390, height: 1050 });
   await page.screenshot({ path: '.test-data/receipt-work/settings-mobile.png', fullPage: true });
   const imported = page.waitForRequest((request) => request.url().includes('?/importReceipts'));
-  await dialog.getByRole('button', { name: 'Add 2 items', exact: true }).click();
+  await dialog.getByRole('button', { name: /^Add 2 items for/ }).click();
   const submitted = JSON.parse(
     new URLSearchParams((await imported).postData()!).get('receipts')!
   )[0];
@@ -439,4 +456,191 @@ test('receipt defaults, item overrides and undetected currency survive import', 
       .map(({ id }) => id)
       .sort()
   );
+});
+
+test('members can upload receipts and manage drafts from other members', async ({
+  page,
+  browser
+}) => {
+  const tripPath = await start(page, 'Guest upload owner');
+  const tripId = tripPath.split('/').at(-1)!;
+  const origin = new URL(page.url()).origin;
+  const file = await receiptImage(page, 'guest-upload');
+  const ownerUpload = await page.request.post(`${tripPath}/scan`, {
+    headers: { origin },
+    multipart: { file, manual: 'true' }
+  });
+  expect(ownerUpload.status()).toBe(200);
+  const ownerDraft = await ownerUpload.json();
+  const batchUpload = await page.request.post(`${tripPath}/scan`, {
+    headers: { origin },
+    multipart: { file, manual: 'true' }
+  });
+  const batchDraft = await batchUpload.json();
+  const removeUpload = await page.request.post(`${tripPath}/scan`, {
+    headers: { origin },
+    multipart: { file, manual: 'true' }
+  });
+  const removeDraft = await removeUpload.json();
+  const ownerId = rows('SELECT uploader_id FROM receipt_drafts WHERE id=?', ownerDraft.id)[0]
+    .uploader_id;
+  const guestContext = await browser.newContext();
+  try {
+    const guest = await guestContext.newPage();
+    await login(guest, 'Receipt guest');
+    await page.request.post(`${tripPath}?/member`, { form: { name: 'Receipt guest' } });
+    const guestId = rows(
+      'SELECT id FROM members WHERE trip_id=? AND name=?',
+      tripId,
+      'Receipt guest'
+    )[0].id;
+    expect(
+      (
+        await guestContext.request.delete(`${tripPath}/receipt/${removeDraft.id}`, {
+          headers: { origin }
+        })
+      ).status()
+    ).toBe(200);
+    expect(rows('SELECT * FROM receipt_drafts WHERE id=?', removeDraft.id)).toHaveLength(0);
+    expect(
+      (
+        await guestContext.request.post(`${tripPath}?/importReceipts`, {
+          form: {
+            receipts: JSON.stringify([
+              {
+                draft: batchDraft.id,
+                merchant: 'Shared batch',
+                members: [guestId, ownerId],
+                date: '2026-11-11',
+                items: [{ title: 'Shared batch item', amount: '3', currency: 'CZK' }]
+              }
+            ])
+          }
+        })
+      ).status()
+    ).toBe(200);
+    const forged = await guestContext.request.post(`${tripPath}/scan`, {
+      headers: { origin },
+      multipart: { file, manual: 'true', payer: ownerId }
+    });
+    expect(forged.status()).toBe(200);
+    const ownDraft = await forged.json();
+    expect(
+      rows('SELECT uploader_id FROM receipt_drafts WHERE id=?', ownDraft.id)[0].uploader_id
+    ).toBe(guestId);
+    expect(
+      (
+        await guestContext.request.delete(`${tripPath}/receipt/${ownDraft.id}`, {
+          headers: { origin }
+        })
+      ).status()
+    ).toBe(200);
+    expect(rows('SELECT * FROM receipt_drafts WHERE id=?', ownDraft.id)).toEqual([]);
+    expect(
+      (
+        await guestContext.request.post(`${tripPath}?/importReceipt`, {
+          form: {
+            draft: ownerDraft.id,
+            merchant: 'Shared receipt',
+            members: ownerId,
+            date: '2026-11-11',
+            items: JSON.stringify([{ title: 'Shared receipt item', amount: '2', currency: 'CZK' }])
+          }
+        })
+      ).status()
+    ).toBe(200);
+    for (const draft of [ownerDraft, batchDraft])
+      expect(rows('SELECT payer_id FROM expenses WHERE receipt_id=?', draft.id)).toEqual([
+        { payer_id: ownerId }
+      ]);
+    await guest.goto(tripPath);
+    await expect(guest.locator('html[data-hydrated=true]')).toHaveCount(1);
+    await guest.getByRole('button', { name: 'Receipts', exact: true }).first().click();
+    await guest.getByRole('button', { name: 'Add receipt', exact: true }).click();
+    const dialog = guest.locator('dialog[open]');
+    await dialog.locator('input[type=file]').setInputFiles(file);
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(
+      dialog.getByRole('heading', { name: 'Review receipt', exact: true })
+    ).toBeVisible();
+    const draft = rows(
+      'SELECT id FROM receipt_drafts WHERE trip_id=? AND uploader_id=?',
+      tripId,
+      guestId
+    )[0];
+    const invalid = {
+      draft: draft.id,
+      merchant: 'Guest receipt',
+      kind: 'invalid',
+      date: '2026-11-11',
+      members: [guestId],
+      items: [{ title: 'Coffee', amount: '1.25', currency: 'EUR' }]
+    };
+    expect(
+      (
+        await guestContext.request.post(`${tripPath}?/importReceipts`, {
+          form: { receipts: JSON.stringify([invalid]) }
+        })
+      ).status()
+    ).toBe(400);
+    await expect(dialog.getByRole('button', { name: 'Groceries', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    await guest.setViewportSize({ width: 390, height: 1050 });
+    await guest.screenshot({ path: '.test-data/receipt-work/guest-review.png', fullPage: true });
+    await dialog.getByRole('button', { name: /^Add 1 item for 31,25\sKč/ }).click();
+    await expect(guest.locator('dialog[open]')).toHaveCount(0);
+    await expect(guest.locator('.receipt-card')).toHaveCount(3);
+    expect(rows('SELECT payer_id,kind,amount FROM expenses WHERE receipt_id=?', draft.id)).toEqual([
+      { payer_id: guestId, kind: 'product', amount: 3125 }
+    ]);
+    expect(rows('SELECT uploader_id FROM receipts WHERE id=?', draft.id)).toEqual([
+      { uploader_id: guestId }
+    ]);
+    expect(rows('SELECT * FROM receipt_drafts WHERE id=?', ownerDraft.id)).toHaveLength(0);
+  } finally {
+    await guestContext.close();
+  }
+});
+
+test('five receipt scans run in parallel and the total includes every receipt', async ({
+  page
+}) => {
+  await start(page, 'Parallel scanner owner');
+  const before = calls().length;
+  const dialog = page.locator('dialog[open]');
+  await dialog
+    .locator('input[type=file]')
+    .setInputFiles(
+      await Promise.all(
+        Array.from({ length: 6 }, (_, index) => receiptImage(page, `parallel-${index}`))
+      )
+    );
+  await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(dialog.locator('.receipt-scan')).toHaveCount(5);
+  const scan = dialog.locator('.receipt-scan').first();
+  const preview = dialog.locator('.receipt-selection-card').first().locator('.receipt-preview');
+  const scanBox = await scan.boundingBox(),
+    previewBox = await preview.boundingBox();
+  expect(scanBox!.width).toBeCloseTo(previewBox!.width, 0);
+  expect(scanBox!.height).toBeCloseTo(previewBox!.height, 0);
+  const band = scan.locator('.receipt-scan-band');
+  expect(await band.evaluate((el) => getComputedStyle(el).animationName)).toMatch(/receipt-sweep$/);
+  await expect
+    .poll(() => band.evaluate((el) => el.getBoundingClientRect().bottom))
+    .toBeGreaterThan(scanBox!.y + scanBox!.height * 0.3);
+  await page.screenshot({ path: '.test-data/receipt-work/full-image-scan.png', fullPage: true });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  expect(await band.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
+  await expect(dialog.getByRole('heading', { name: 'Review receipts', exact: true })).toBeVisible();
+  expect(calls()).toHaveLength(before + 6);
+  expect(JSON.parse(readFileSync(join(directory(), 'provider-stats.json'), 'utf8'))).toEqual({
+    activeScans: 0,
+    maximumScans: 5
+  });
+  await expect(dialog.getByRole('button', { name: /^Add 6 items for/ })).toHaveText(
+    /Add 6 items for 187,50\sKč/
+  );
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 });

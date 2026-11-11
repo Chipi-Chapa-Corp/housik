@@ -4,11 +4,11 @@ import { ReceiptError } from '#lib/server/receipt-scanner.ts';
 import { stageReceipt } from '#lib/server/receipts.ts';
 import type { RequestHandler } from './$types';
 export const POST: RequestHandler = async (event) => {
-  const s = requireSession(event, true);
+  const s = requireSession(event);
   if (!s.member_id) return json({ error: 'Trip membership required.' }, { status: 403 });
   if (event.request.headers.get('origin') !== event.url.origin)
     return json({ error: 'Invalid origin.' }, { status: 403 });
-  rateLimit(`receipt:${s.trip_id}`);
+  rateLimit(`receipt:${s.trip_id}:${s.member_id}`);
   const size = Number(event.request.headers.get('content-length') || 0);
   if (size > 11 * 1024 * 1024) return json({ error: 'File limit is 10 MB.' }, { status: 413 });
   try {

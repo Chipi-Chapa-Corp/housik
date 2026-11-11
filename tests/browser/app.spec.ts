@@ -119,7 +119,7 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await login(gp, guest);
   await gp.getByRole('link', { name: new RegExp('Mountain weekend') }).click();
   await expect(gp).toHaveURL(tripUrl);
-  await expect(gp.getByRole('button', { name: 'Add expense', exact: true })).toHaveCount(0);
+  await expect(gp.getByRole('button', { name: 'Add expense', exact: true })).toBeVisible();
   await expect(
     gp.locator('.expense-row').filter({ hasText: 'Groceries' }).locator('.expense-total')
   ).toHaveText(/^60,00/);
@@ -139,7 +139,7 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await gp.reload();
   await expect(gp.locator('html[data-hydrated=true]')).toHaveCount(1);
   await expect(gp.getByRole('heading', { name: 'Mountain weekend' })).toBeVisible();
-  // Forged owner operations are denied by the server, not just hidden in the UI.
+  // Members can manage expenses, but the payer must belong to this trip.
   const forged = await guestContext.request.post(`${tripPath}?/expense`, {
     form: { title: 'forged', amount: '99', payer: 'x', kind: 'other', date: '2026-11-20' },
     headers: {
@@ -148,7 +148,7 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
       accept: 'application/json'
     }
   });
-  expect(forged.status()).toBe(403);
+  expect(forged.status()).toBe(400);
   const outsider = await browser.newContext();
   const outsiderPage = await outsider.newPage();
   await login(outsiderPage, 'outsider');
@@ -434,6 +434,121 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await page.screenshot({ path: 'test-results/settlements-desktop.png', fullPage: true });
   expect(errors).toEqual([]);
   await guestContext.close();
+});
+
+test('all trip members can manage settings, invitations, expenses and tags', async ({
+  page,
+  browser
+}) => {
+  await login(page, 'Shared owner');
+  await page.getByRole('button', { name: 'Sample trip', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /^Sample trip/ })).toBeVisible();
+  const tripPath = new URL(page.url()).pathname;
+  await page.getByRole('button', { name: 'Add expense', exact: true }).click();
+  let dialog = page.locator('dialog[open]');
+  const ownerId = await dialog.locator('select[name=payer]').inputValue();
+  await dialog.getByLabel('Name', { exact: true }).fill('Owner purchase');
+  await dialog.getByLabel('Amount · CZK', { exact: true }).fill('10');
+  await dialog.getByRole('button', { name: 'Add expense', exact: true }).click();
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  const memberContext = await browser.newContext();
+  try {
+    const member = await memberContext.newPage();
+    await login(member, 'Shared member');
+    // Signing in alone does not grant access to a private trip.
+    for (const action of ['member', 'expense', 'deleteExpense', 'tag', 'deleteTag', 'settings'])
+      expect(
+        (
+          await memberContext.request.post(`${tripPath}?/${action}`, { form: { id: 'other-trip' } })
+        ).status()
+      ).toBe(403);
+    expect(
+      (await page.request.post(`${tripPath}?/member`, { form: { name: 'Shared member' } })).status()
+    ).toBe(200);
+    await member.goto(tripPath);
+    await expect(member.locator('html[data-hydrated=true]')).toHaveCount(1);
+    await member.getByRole('button', { name: 'Trip settings', exact: true }).click();
+    dialog = member.locator('dialog[open]');
+    await dialog.getByLabel('Trip name', { exact: true }).fill('Shared permissions trip');
+    await dialog.getByLabel('House / place', { exact: true }).fill('Shared cabin');
+    await dialog
+      .getByLabel('Location link', { exact: true })
+      .fill('https://maps.example.com/shared');
+    await dialog.getByLabel('Arrival', { exact: true }).fill('2026-11-21');
+    await dialog.getByLabel('Departure', { exact: true }).fill('2026-11-24');
+    await dialog.getByRole('button', { name: 'Save trip', exact: true }).click();
+    await expect(
+      member.getByRole('heading', { name: 'Shared permissions trip', exact: true })
+    ).toBeVisible();
+    await expect(member.getByRole('link', { name: 'Shared cabin' })).toHaveAttribute(
+      'href',
+      'https://maps.example.com/shared'
+    );
+    await member.getByRole('button', { name: 'People', exact: true }).first().click();
+    await member.getByRole('button', { name: 'Invite', exact: true }).click();
+    dialog = member.locator('dialog[open]');
+    await dialog.getByLabel('Name', { exact: true }).fill('Shared invite');
+    await dialog.getByRole('button', { name: 'Invite to trip', exact: true }).click();
+    await expect(member.locator('.person-card').filter({ hasText: 'Shared invite' })).toBeVisible();
+    await member.getByRole('button', { name: 'Expenses', exact: true }).first().click();
+    await member.getByRole('button', { name: 'Add expense', exact: true }).click();
+    dialog = member.locator('dialog[open]');
+    expect(await dialog.locator('select[name=payer]').inputValue()).not.toBe(ownerId);
+    await dialog.getByLabel('Name', { exact: true }).fill('Member purchase');
+    await dialog.getByLabel('Amount · CZK', { exact: true }).fill('23.50');
+    await dialog.getByRole('button', { name: 'Add expense', exact: true }).click();
+    await expect(
+      member.locator('.expense-row').filter({ hasText: 'Member purchase' })
+    ).toBeVisible();
+    await member.locator('.expense-row').filter({ hasText: 'Owner purchase' }).click();
+    await member
+      .locator('dialog[open]')
+      .getByRole('button', { name: 'Edit expense', exact: true })
+      .click();
+    dialog = member.locator('dialog[open]');
+    await dialog.getByLabel('Name', { exact: true }).fill('Reviewed purchase');
+    await dialog.getByLabel('Amount · CZK', { exact: true }).fill('12.34');
+    await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect(
+      member
+        .locator('.expense-row')
+        .filter({ hasText: 'Reviewed purchase' })
+        .locator('.expense-total')
+    ).toHaveText(/^12,34/);
+    await member.getByRole('button', { name: 'Tags', exact: true }).click();
+    dialog = member.locator('dialog[open]');
+    await dialog.getByLabel('New tag', { exact: true }).fill('Shared group');
+    await dialog.getByRole('button', { name: 'Create tag', exact: true }).click();
+    await dialog.locator('.tag-list button').filter({ hasText: 'Shared group' }).click();
+    await dialog.getByLabel('Edit tag', { exact: true }).fill('Updated shared group');
+    await dialog.getByRole('checkbox', { name: 'Shared invite', exact: true }).uncheck();
+    await dialog.getByRole('button', { name: 'Save tag', exact: true }).click();
+    const tag = dialog.locator('.tag-list button').filter({ hasText: 'Updated shared group' });
+    await expect(tag).not.toContainText('Shared invite');
+    await tag.click();
+    await dialog.getByRole('button', { name: 'Remove tag', exact: true }).click();
+    await expect(dialog.locator('.tag-list')).not.toContainText('Updated shared group');
+    await close(member);
+    for (const name of ['Member purchase', 'Reviewed purchase']) {
+      const row = member.locator('.expense-row').filter({ hasText: name });
+      await row.click();
+      await member
+        .locator('dialog[open]')
+        .getByRole('button', { name: 'Delete', exact: true })
+        .click();
+      await expect(row).toHaveCount(0);
+    }
+    await page.reload();
+    await expect(
+      page.getByRole('heading', { name: 'Shared permissions trip', exact: true })
+    ).toBeVisible();
+    await expect(page.locator('.trip-meta-row')).toContainText('Shared invite');
+    await expect(page.locator('.expense-row').filter({ hasText: 'Reviewed purchase' })).toHaveCount(
+      0
+    );
+  } finally {
+    await memberContext.close();
+  }
 });
 
 test('sample buyers, personal participation and clean home', async ({ page }) => {

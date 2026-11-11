@@ -49,7 +49,7 @@ export function logout(event: RequestEvent) {
   if (token) db.prepare('DELETE FROM sessions WHERE token=?').run(digest(token));
   event.cookies.delete('housik', { path: '/' });
 }
-export function requireSession(event: RequestEvent, owner = false): Session {
+export function requireSession(event: RequestEvent): Session {
   const user = getSession(event);
   if (!user) redirect(303, '/');
   const tripId = event.params.id || '';
@@ -61,7 +61,6 @@ export function requireSession(event: RequestEvent, owner = false): Session {
     .get(tripId, user.username) as { id: string } | undefined;
   const role = trip.owner_id === user.id ? 'owner' : 'guest';
   if (role === 'guest' && !member) error(403, 'This trip is private.');
-  if (owner && role !== 'owner') error(403, 'Only the trip owner can change this.');
   return { trip_id: tripId, member_id: member?.id || null, role, user };
 }
 export function rateLimit(key: string) {

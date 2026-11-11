@@ -28,7 +28,7 @@ export const GET: RequestHandler = async (event) => {
 };
 
 export const DELETE: RequestHandler = async (event) => {
-  const session = requireSession(event, true);
+  const session = requireSession(event);
   if (event.request.headers.get('origin') !== event.url.origin) error(403, 'Invalid origin.');
   await discardReceipt(session.trip_id, event.params.receipt);
   return json({ success: true });

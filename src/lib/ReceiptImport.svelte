@@ -10,10 +10,11 @@
   import {
     maxReceipts,
     maxReceiptBytes,
+    receiptScanConcurrency,
     type ReceiptReviewItem,
     type ReceiptReview
   } from './receipts';
-  import type { Member } from './types';
+  import type { Member, Expense } from './types';
   import { cents } from './money';
   import { inputCurrency, toCzk } from './currency';
 
@@ -41,6 +42,7 @@
     status: 'ready' | 'processing' | 'succeeded' | 'failed';
     draft: string;
     merchant: string;
+    kind: Expense['kind'];
     date: string;
     members: string[];
     items: (ReceiptReviewItem & { currency: string; expanded?: boolean })[];
@@ -56,6 +58,12 @@
     controller: AbortController | undefined,
     wasOpen = false;
   const totalItems = $derived(receipts.reduce((sum, receipt) => sum + receipt.items.length, 0));
+  const totalAmount = $derived(
+    receipts.reduce(
+      (sum, receipt) => sum + receipt.items.reduce((total, item) => total + itemTotal(item), 0),
+      0
+    )
+  );
   const money = (amount: number) =>
     new Intl.NumberFormat('cs-CZ', {
       style: 'currency',
@@ -127,6 +135,7 @@
         status: 'ready',
         draft: '',
         merchant: file.name.replace(/\.[^.]+$/, '').slice(0, 80) || 'Receipt',
+        kind: 'product',
         date: new Date().toISOString().slice(0, 10),
         members: members.map((member) => member.id),
         items: [{ title: '', amount: '', currency: 'CZK' }],
@@ -169,7 +178,7 @@
       files = [...receipts];
     let next = 0;
     await Promise.all(
-      Array.from({ length: Math.min(2, files.length) }, async () => {
+      Array.from({ length: Math.min(receiptScanConcurrency, files.length) }, async () => {
         while (next < files.length && token === generation && !controller?.signal.aborted) {
           const receipt = files[next++];
           receipt.status = 'processing';
@@ -212,9 +221,10 @@
         }
       }
       const reviews: ReceiptReview[] = receipts.map(
-        ({ draft, merchant, date, members, items }) => ({
+        ({ draft, merchant, kind, date, members, items }) => ({
           draft,
           merchant,
+          kind,
           date,
           members,
           items: items.map(({ title, amount, currency, date, members }) => ({
@@ -292,25 +302,11 @@
                     onclick={() => remove(receipt)}><Trash2 size={16} /></button
                   >{/if}
                 {#if receipt.status === 'processing'}<div
-                    class="neural-overlay"
+                    class="receipt-scan"
                     role="status"
                     aria-label={`Processing ${receipt.file.name}`}
                   >
-                    <svg viewBox="0 0 120 80" aria-hidden="true"
-                      ><g class="neural-links" fill="none" stroke="currentColor" stroke-width="1.5"
-                        ><path
-                          d="M16 16 54 12 100 25 62 42 16 16 20 63 62 42 100 65 100 25M20 63 54 12M62 42 54 12M20 63 100 65"
-                        /></g
-                      ><g fill="currentColor"
-                        >{#each [[16, 16], [54, 12], [100, 25], [62, 42], [20, 63], [100, 65]] as point, i}<circle
-                            class="neural-node"
-                            cx={point[0]}
-                            cy={point[1]}
-                            r="4"
-                            style:animation-delay={`${i * 140}ms`}
-                          />{/each}</g
-                      ></svg
-                    >
+                    <div class="receipt-scan-band" aria-hidden="true"></div>
                   </div>{:else if receipt.status === 'succeeded' || receipt.status === 'failed'}<span
                     class="receipt-status"
                     class:succeeded={receipt.status === 'succeeded'}
@@ -373,6 +369,16 @@
                   disabled={busy}
                   onclick={() => remove(receipt)}><Trash2 size={16} /></button
                 >
+              </div>
+              <div class="segmented receipt-type" role="group" aria-label="Receipt type">
+                {#each [['product', 'Groceries'], ['other', 'Extra'], ['rent', 'Rent']] as [value, label]}
+                  <button
+                    type="button"
+                    class:active={receipt.kind === value}
+                    aria-pressed={receipt.kind === value}
+                    onclick={() => (receipt.kind = value as Expense['kind'])}>{label}</button
+                  >
+                {/each}
               </div>
               <div class="receipt-defaults">
                 <label>Date<input type="date" bind:value={receipt.date} required /></label>
@@ -472,7 +478,7 @@
             </article>{/each}
         </div>
         {#if error}<p class="form-error" role="alert">{error}</p>{/if}
-        <div class="modal-actions">
+        <div class="modal-actions receipt-actions">
           <button class="btn secondary" type="button" onclick={close}>Cancel</button><button
             class="btn primary"
             disabled={busy ||
@@ -481,7 +487,12 @@
                 (receipt) =>
                   !receipt.items.length ||
                   receipt.items.some((item) => !['EUR', 'CZK'].includes(item.currency))
-              )}>{busy ? 'Saving…' : `Add ${totalItems} items`}<Check size={16} /></button
+              )}
+            >{busy
+              ? 'Saving…'
+              : `Add ${totalItems} ${totalItems === 1 ? 'item' : 'items'} for ${money(totalAmount)}`}<Check
+              size={16}
+            /></button
           >
         </div>
       </form>
@@ -660,39 +671,48 @@
   .receipt-thumbnail :global(.receipt-preview) {
     height: 140px;
   }
-  .neural-overlay {
+  .receipt-scan {
     position: absolute;
     inset: 12px 12px auto;
     height: 160px;
-    display: grid;
-    place-items: center;
-    background: #ffffffa8;
-    color: #45576c;
+    overflow: hidden;
+    background: #45576c08;
     border-radius: 9px;
     pointer-events: none;
   }
-  .neural-overlay svg {
-    width: 120px;
-    height: 80px;
+  .receipt-scan-band {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 35%;
+    background: linear-gradient(transparent, #769ca52e);
+    border-bottom: 2px solid #567d89;
+    box-shadow: 0 4px 12px #567d8933;
+    animation: receipt-sweep 1.6s ease-in-out infinite alternate;
   }
-  .neural-links {
-    stroke-dasharray: 8 8;
-    animation: neural-flow 1.1s linear infinite;
-  }
-  .neural-node {
-    animation: neural-pulse 1.1s ease-in-out infinite alternate;
-    transform-box: fill-box;
-    transform-origin: center;
-  }
-  @keyframes neural-flow {
+  @keyframes receipt-sweep {
+    from {
+      transform: translateY(-100%);
+    }
     to {
-      stroke-dashoffset: -32;
+      transform: translateY(186%);
     }
   }
-  @keyframes neural-pulse {
-    to {
-      opacity: 0.4;
-      transform: scale(0.65);
+  .receipt-type button {
+    min-width: 0;
+  }
+  .receipt-actions {
+    flex-wrap: wrap;
+  }
+  .receipt-actions .primary {
+    white-space: normal;
+  }
+  @media (max-width: 480px) {
+    .receipt-actions {
+      flex-direction: column-reverse;
+      align-items: stretch;
+    }
+    .receipt-actions button {
+      width: 100%;
     }
   }
   @media (max-width: 640px) {
@@ -728,9 +748,10 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .neural-links,
-    .neural-node {
+    .receipt-scan-band {
       animation: none;
+      top: 50%;
+      transform: translateY(-50%);
     }
   }
 </style>

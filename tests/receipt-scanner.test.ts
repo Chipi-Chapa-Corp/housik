@@ -126,5 +126,5 @@ test('provider concurrency is bounded for a multi-receipt batch', async () => {
       scanProducts(bytes, 'image/png', { key: 'fixture', model: 'fixture', fetch: fetcher })
     )
   );
-  assert.equal(maximum, 2);
+  assert.equal(maximum, 5);
 });
