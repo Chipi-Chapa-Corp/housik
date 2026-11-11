@@ -79,18 +79,23 @@ export function text(form: FormData, name: string, max = 100) {
   if (!value || value.length > max) throw new Error(`Check ${name}.`);
   return value;
 }
+export function locationUrl(form: FormData) {
+  const location = String(form.get('location_url') || '').trim();
+  if (location.length > 2048) throw new Error('Location link is too long.');
+  if (location) {
+    try {
+      const url = new URL(location);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
+    } catch {
+      throw new Error('Enter an http or https location link.');
+    }
+  }
+  return location;
+}
 export function password(form: FormData) {
   const value = String(form.get('password') ?? '');
   if (value.length < 8 || value.length > 128)
     throw new Error('Use a password with 8–128 characters.');
   return value;
 }
-export function validDate(value: string) {
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
-    !Number.isFinite(Date.parse(value)) ||
-    new Date(value).toISOString().slice(0, 10) !== value
-  )
-    throw new Error('Choose a valid date.');
-  return value;
-}
+export { validDate } from '#lib/dates.ts';

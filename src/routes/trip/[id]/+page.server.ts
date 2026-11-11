@@ -1,7 +1,8 @@
 import { error, fail, isHttpError, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db, id, tripData } from '#lib/server/db.ts';
-import { requireSession, logout, text, validDate } from '#lib/server/auth.ts';
+import { tripNights } from '#lib/dates.ts';
+import { requireSession, logout, text, validDate, locationUrl } from '#lib/server/auth.ts';
 import { allocate, balances, cents, settle } from '#lib/money.ts';
 import * as env from '$app/env/private';
 import { commitReceipt } from '#lib/server/receipts.ts';
@@ -204,24 +205,13 @@ export const actions: Actions = {
   settings: wrap((event, f) => {
     const s = requireSession(event, true),
       name = text(f, 'name', 60),
-      nights = Number(f.get('nights')),
-      start = validDate(text(f, 'start'));
-    if (!Number.isInteger(nights) || nights < 1 || nights > 365)
-      throw new Error('Choose 1–365 nights.');
+      start = validDate(text(f, 'start')),
+      nights = tripNights(start, text(f, 'departure'));
     if (
       db.prepare('SELECT 1 FROM trips WHERE name=? COLLATE NOCASE AND id!=?').get(name, s.trip_id)
     )
       throw new Error('That trip name is taken.');
-    const location = String(f.get('location_url') || '').trim();
-    if (location.length > 2048) throw new Error('Location link is too long.');
-    if (location) {
-      try {
-        const url = new URL(location);
-        if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
-      } catch {
-        throw new Error('Enter an http or https location link.');
-      }
-    }
+    const location = locationUrl(f);
     db.prepare('UPDATE trips SET name=?,house=?,start=?,nights=?,location_url=? WHERE id=?').run(
       name,
       String(f.get('house') || '').slice(0, 100),

@@ -40,8 +40,11 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   let dialog = page.locator('dialog[open]');
   await dialog.getByLabel('Trip name').fill('Mountain weekend');
   await dialog.getByLabel('House / place').fill('The Pine House · Šumava');
+  await dialog.getByLabel('Location link').fill('https://maps.example.com/pine-house');
   await dialog.getByLabel('Arrival').fill('2026-11-20');
-  await dialog.getByLabel('Nights').fill('3');
+  await expect(dialog.getByLabel('Nights', { exact: true })).toHaveCount(0);
+  await dialog.getByLabel('Departure').fill('2026-11-23');
+  await page.screenshot({ path: 'test-results/trip-dates.png', fullPage: true });
   await dialog.getByRole('button', { name: 'Create trip' }).click();
   await expect(page).toHaveURL(/\/trip\//);
   const tripUrl = page.url();
@@ -53,8 +56,17 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await expect(page.locator('.trip-meta-row .name-bubble').first()).toBeVisible();
   await expect(page.locator('.trip-meta-row .name-bubble').first()).toHaveText(owner);
   await expect(page.locator('.avatar')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'The Pine House · Šumava' })).toHaveAttribute(
+    'href',
+    'https://maps.example.com/pine-house'
+  );
   await page.getByRole('button', { name: 'Trip settings' }).click();
   await expect(page.locator('dialog[open]')).toBeVisible();
+  await expect(page.locator('dialog[open]').getByLabel('Departure')).toHaveValue('2026-11-23');
+  await expect(page.locator('dialog[open]').getByLabel('Nights', { exact: true })).toHaveCount(0);
+  await expect(page.locator('dialog[open]').getByLabel('Location link')).toHaveValue(
+    'https://maps.example.com/pine-house'
+  );
   await page
     .locator('dialog[open]')
     .getByLabel('Location link')

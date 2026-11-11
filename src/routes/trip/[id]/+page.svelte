@@ -36,6 +36,7 @@
   import TagSelect from '#lib/TagSelect.svelte';
   import type { Expense, Tag, Payment } from '#lib/types.ts';
   import { allocate } from '#lib/money.ts';
+  import { departureDate } from '#lib/dates.ts';
   let { data } = $props();
   let tab = $state('expenses'),
     filter = $state('all'),
@@ -66,6 +67,7 @@
     items: { title: string; amount: string }[];
   } | null>(null);
   let memberUsername = $state('');
+  let settingsArrival = $state('');
   const owner = $derived(data.session.role === 'owner');
   const total = $derived(data.expenses.reduce((s, e) => s + e.amount, 0));
   const mine = $derived(data.ledger.find((r) => r.id === data.session.member_id)!);
@@ -105,6 +107,7 @@
     return `${start.toLocaleDateString('en', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   });
   function open(name: string) {
+    if (name === 'settings') settingsArrival = data.trip.start;
     message = '';
     modal = name;
   }
@@ -865,14 +868,14 @@
       /></label
     >
     <div class="form-grid">
-      <label>Arrival<input type="date" name="start" value={data.trip.start} required /></label
+      <label>Arrival<input type="date" name="start" bind:value={settingsArrival} required /></label
       ><label
-        >Nights<input
-          name="nights"
-          type="number"
-          min="1"
-          max="365"
-          value={data.trip.nights}
+        >Departure<input
+          name="departure"
+          type="date"
+          min={settingsArrival ? departureDate(settingsArrival, 1) : undefined}
+          max={settingsArrival ? departureDate(settingsArrival, 365) : undefined}
+          value={departureDate(data.trip.start, data.trip.nights)}
           required
         /></label
       >

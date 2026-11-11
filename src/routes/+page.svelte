@@ -4,11 +4,13 @@
   import { ArrowUpRight, ArrowRight, Plus, LogOut, CalendarDays, Users } from '@lucide/svelte';
   import Modal from '#lib/Modal.svelte';
   import NameBubble from '#lib/NameBubble.svelte';
+  import { departureDate } from '#lib/dates.ts';
   let { data } = $props();
   let createOpen = $state(false),
     busy = $state(false),
     error = $state('');
   const date = new Date().toISOString().slice(0, 10);
+  let arrival = $state(date);
   const submit: SubmitFunction = () => {
     busy = true;
     error = '';
@@ -107,9 +109,17 @@
     <label>Trip name<input name="trip" required maxlength="60" /></label><label
       >House / place<input name="house" maxlength="100" /></label
     >
+    <label>Location link<input type="url" name="location_url" maxlength="2048" /></label>
     <div class="form-grid">
-      <label>Arrival<input type="date" name="start" value={date} required /></label><label
-        >Nights<input type="number" name="nights" min="1" max="365" value="3" required /></label
+      <label>Arrival<input type="date" name="start" bind:value={arrival} required /></label><label
+        >Departure<input
+          type="date"
+          name="departure"
+          value={departureDate(arrival || date, 3)}
+          min={arrival ? departureDate(arrival, 1) : undefined}
+          max={arrival ? departureDate(arrival, 365) : undefined}
+          required
+        /></label
       >
     </div>
     {#if error}<p class="form-error" role="alert">{error}</p>{/if}<button

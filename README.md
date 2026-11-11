@@ -99,7 +99,7 @@ Open the URL printed by Vite. Enter a name (up to 20 characters) and password; a
 - Multiple trips per account; globally unique trip names and name invitations.
 - Trip owners manage people, rent, purchases, receipt imports and tags. Only a payment’s receiver can confirm or undo it, including when the sender is the trip owner.
 - Invited people can read the trip and change **only their own** expense participation: default, include, exclude, cover fully, or contribute extra. They cannot edit other people or confirm payments to another person.
-- Rent can be entered as a total or a nightly rate × the trip's nights. Trip settings accept an HTTP(S) location link; the house/place name becomes clickable.
+- Trips use arrival and departure dates; nights are calculated automatically. Rent can be entered as a total or a nightly rate × the calculated nights. Trip settings accept an HTTP(S) location link; the house/place name becomes clickable.
 - Separate extra expenses cover fuel, car costs, benefit credits, and other contributions. Their value is entered in the trip currency and credited to the person who paid.
 - Receipt photos/PDFs are stored privately. Scanning extracts line items using OpenAI's Responses API and structured outputs. Review/edit every item before importing it atomically. Each receipt creates a group with its own default payers and adds its items to the purchase list. Manual receipt entry works without an API key.
 - Per-person shares, expenses paid, transfers sent/received, overpayments, and live remaining balances.
@@ -126,7 +126,7 @@ All trips use CZK. The initial placeholder EUR entries are relabeled as CZK with
 
 Amounts use integer minor units (cents/halers). An ungrouped expense defaults to everyone. The Share with dropdown accepts multiple tags. The union of their participants shares the expense, with each person counted once; Everyone uses the whole trip. A tag defines its default participants. Each signed-in member can adjust only their own participation. An individual inclusion/exclusion overrides that default. Full payers split the whole expense equally among themselves. Extra contributions are added to the volunteer’s ordinary share. Other participants split the reduced remainder. Volunteers never receive a discount from their own extra, and shares of other expenses stay unchanged. Extras cannot exceed the other participants’ shares. The app rejects a split with no payers.
 
-Any indivisible cent goes to participants in stable ID order. Adding a person includes them in existing ungrouped expenses; named groups retain their explicit membership. Editing trip nights does not silently change existing rent amounts.
+Any indivisible cent goes to participants in stable ID order. Adding a person includes them in existing ungrouped expenses; named groups retain their explicit membership. Editing trip dates does not silently change existing rent amounts.
 
 Balances include both original expense payments and recorded person-to-person payments. Overpayment can reverse who owes whom. Plans recalculate after any change. The solver searches for the minimum number of transfers, pruning equivalent states; a 200,000-state budget keeps larger groups responsive. If that budget is reached, the solver returns its best complete plan without claiming a proven minimum.
 

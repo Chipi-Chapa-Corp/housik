@@ -1,10 +1,12 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db, id } from '#lib/server/db.ts';
+import { tripNights } from '#lib/dates.ts';
 import {
   createSession,
   getSession,
   hash,
+  locationUrl,
   password,
   rateLimit,
   text,
@@ -74,17 +76,16 @@ export const actions: Actions = {
     try {
       rateLimit(`create:${user.id}`);
       const name = text(f, 'trip', 60),
-        nights = Number(f.get('nights'));
-      if (!Number.isInteger(nights) || nights < 1 || nights > 365)
-        throw new Error('Choose 1–365 nights.');
+        start = validDate(text(f, 'start')),
+        nights = tripNights(start, text(f, 'departure'));
       const currency = 'CZK';
-      const start = validDate(text(f, 'start'));
+      const location = locationUrl(f);
       if (db.prepare('SELECT 1 FROM trips WHERE name=? COLLATE NOCASE').get(name))
         throw new Error('That trip name is taken.');
       const tripId = id();
       db.transaction(() => {
         db.prepare(
-          'INSERT INTO trips(id,name,owner_id,house,start,nights,currency) VALUES(?,?,?,?,?,?,?)'
+          'INSERT INTO trips(id,name,owner_id,house,start,nights,currency,location_url) VALUES(?,?,?,?,?,?,?,?)'
         ).run(
           tripId,
           name,
@@ -94,7 +95,8 @@ export const actions: Actions = {
             .slice(0, 100),
           start,
           nights,
-          currency
+          currency,
+          location
         );
         db.prepare('INSERT INTO members VALUES(?,?,?,?,0)').run(
           id(),
