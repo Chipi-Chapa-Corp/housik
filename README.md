@@ -11,7 +11,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Open <http://localhost:3000>. Podman works with the same files: `podman compose up -d --build`.
+Open <http://localhost:4827>. Podman works with the same files: `podman compose up -d --build`.
 
 `Containerfile` builds the app and its native SQLite dependency in a separate build stage. The running container uses the non-root `node` user. SQLite and uploaded receipts live in the `housik_data` named volume and survive container replacement. The service includes a health check.
 
@@ -20,9 +20,9 @@ Set `OPENAI_API_KEY` in `.env` to enable receipt scanning. No API key is needed 
 Optional `.env` settings:
 
 ```dotenv
-HOUSIK_PORT=3000
+HOUSIK_PORT=4827
 HOUSIK_BIND=127.0.0.1
-ORIGIN=http://localhost:3000
+ORIGIN=http://localhost:4827
 ```
 
 For another host port, change both `HOUSIK_PORT` and the port in `ORIGIN`. For access through a reverse proxy, set `ORIGIN` to the external URL. Set `HOUSIK_BIND=0.0.0.0` to expose the port beyond localhost.
@@ -42,7 +42,7 @@ Funnel forwards the existing local app port to a public HTTPS URL. Run Tailscale
 2. On that host, with Tailscale installed and signed in, run:
 
    ```sh
-   tailscale funnel --bg http://127.0.0.1:3000
+   tailscale funnel --bg http://127.0.0.1:4827
    tailscale funnel status
    ```
 
@@ -51,7 +51,7 @@ Funnel forwards the existing local app port to a public HTTPS URL. Run Tailscale
 3. Set `ORIGIN` in `.env` to that exact HTTPS URL, for example:
 
    ```dotenv
-   HOUSIK_PORT=3000
+   HOUSIK_PORT=4827
    HOUSIK_BIND=127.0.0.1
    ORIGIN=https://your-machine.your-tailnet.ts.net
    ```
@@ -64,12 +64,12 @@ Funnel forwards the existing local app port to a public HTTPS URL. Run Tailscale
 
 Open the Funnel URL. The app uses it for secure session cookies and same-origin form/upload checks; TLS is handled by Tailscale. Setting `ORIGIN` does not require rebuilding the image. Do not point `ORIGIN` at localhost when using the Funnel URL.
 
-If host port 3000 is occupied, set `HOUSIK_PORT=3080` and target `http://127.0.0.1:3080` in the Funnel command. The public URL in `ORIGIN` stays the URL printed by Funnel, independent of the local port.
+If host port 4827 is occupied, set `HOUSIK_PORT=3080` and target `http://127.0.0.1:3080` in the Funnel command. The public URL in `ORIGIN` stays the URL printed by Funnel, independent of the local port.
 
 If the default HTTPS listener is already used by another Tailscale service, choose a separate public port:
 
 ```sh
-tailscale funnel --bg --https=8443 http://127.0.0.1:3000
+tailscale funnel --bg --https=8443 http://127.0.0.1:4827
 ```
 
 Include `:8443` in `ORIGIN` in that case. Use the corresponding Podman Compose commands when running Podman.

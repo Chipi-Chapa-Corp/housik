@@ -7,9 +7,9 @@ services:
     init: true
     restart: unless-stopped
     ports:
-      - '${HOUSIK_BIND:-127.0.0.1}:${HOUSIK_PORT:-3000}:3000'
+      - '${HOUSIK_BIND:-127.0.0.1}:${HOUSIK_PORT:-4827}:3000'
     environment:
-      ORIGIN: '${ORIGIN:-http://localhost:3000}'
+      ORIGIN: '${ORIGIN:-http://localhost:4827}'
       OPENAI_API_KEY: '${OPENAI_API_KEY:-}'
       OPENAI_MODEL: '${OPENAI_MODEL:-gpt-4.1-mini}'
     healthcheck:
