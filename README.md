@@ -34,6 +34,54 @@ docker compose down
 
 `down` keeps the data volume. `down -v` also deletes the trip database and receipts. Existing development data is not automatically imported into the container volume.
 
+## Tailscale Funnel
+
+Funnel forwards the existing local app port to a public HTTPS URL. Run Tailscale on the same host as Docker/Podman; Housik can remain bound to `127.0.0.1`.
+
+1. Start Housik with `docker compose up -d --build`.
+2. On that host, with Tailscale installed and signed in, run:
+
+   ```sh
+   tailscale funnel --bg http://127.0.0.1:3000
+   tailscale funnel status
+   ```
+
+   Follow Tailscale's enablement prompt if Funnel is not enabled yet. The command prints your public URL.
+
+3. Set `ORIGIN` in `.env` to that exact HTTPS URL, for example:
+
+   ```dotenv
+   HOUSIK_PORT=3000
+   HOUSIK_BIND=127.0.0.1
+   ORIGIN=https://your-machine.your-tailnet.ts.net
+   ```
+
+4. Recreate the app container to apply it:
+
+   ```sh
+   docker compose up -d --force-recreate
+   ```
+
+Open the Funnel URL. The app uses it for secure session cookies and same-origin form/upload checks; TLS is handled by Tailscale. Setting `ORIGIN` does not require rebuilding the image. Do not point `ORIGIN` at localhost when using the Funnel URL.
+
+If host port 3000 is occupied, set `HOUSIK_PORT=3080` and target `http://127.0.0.1:3080` in the Funnel command. The public URL in `ORIGIN` stays the URL printed by Funnel, independent of the local port.
+
+If the default HTTPS listener is already used by another Tailscale service, choose a separate public port:
+
+```sh
+tailscale funnel --bg --https=8443 http://127.0.0.1:3000
+```
+
+Include `:8443` in `ORIGIN` in that case. Use the corresponding Podman Compose commands when running Podman.
+
+To remove only this forwarding rule:
+
+```sh
+tailscale funnel --https=443 off
+```
+
+For the 8443 example, use `--https=8443 off` instead. See the [official Funnel command reference](https://tailscale.com/docs/reference/tailscale-cli/funnel).
+
 ## Run locally
 
 Requires Node 22.17+.
