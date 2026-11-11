@@ -1,0 +1,43 @@
+name: housik
+
+services:
+  housik:
+    container_name: housik-app
+    image: localhost/housik:production
+    build:
+      context: .
+      dockerfile: Containerfile
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4827:3000"
+    environment:
+      # Tailscale Funnel supplies the external HTTPS origin and visitor IP.
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
+      ADDRESS_HEADER: x-forwarded-for
+      XFF_DEPTH: "1"
+      OPENAI_API_KEY: '${OPENAI_API_KEY:-}'
+      OPENAI_MODEL: '${OPENAI_MODEL:-gpt-4.1-mini}'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - --input-type=module
+        - -e
+        - "const response = await fetch('http://127.0.0.1:3000/'); if (!response.ok) process.exit(1);"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    volumes:
+      - housik_data:/app/data
+
+volumes:
+  housik_data:
+    external: true
+    name: housik-data
+
+x-pm3:
+  housik:
+    required_services: [housik]
