@@ -1,13 +1,15 @@
 import Database from 'better-sqlite3';
 import * as env from '$app/env/private';
-import { mkdirSync } from 'node:fs';
+import { chmodSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { checkWritableDirectory } from './storage';
 import type { Expense, Member, Tag, Payment } from '#lib/types.ts';
 
 const path = resolve(env.DATABASE_PATH || './data/housik.sqlite');
-mkdirSync(dirname(path), { recursive: true });
+checkWritableDirectory(dirname(path));
 export const db = new Database(path);
+chmodSync(path, 0o600);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.exec(`
@@ -53,6 +55,11 @@ CREATE TABLE IF NOT EXISTS expense_tags (
  tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
  PRIMARY KEY(expense_id,tag_id)
 );
+CREATE TABLE IF NOT EXISTS expense_members (
+ expense_id TEXT NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
+ member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+ PRIMARY KEY(expense_id, member_id)
+);
 CREATE TABLE IF NOT EXISTS choices (
  expense_id TEXT NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
  member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
@@ -91,6 +98,23 @@ if ((db.pragma('user_version', { simple: true }) as number) < 2) {
     db.pragma('user_version = 2');
   })();
 }
+// Older entries only have their CZK ledger amount; keep it as the editing fallback.
+db.transaction(() => {
+  for (const [table, columns] of Object.entries({
+    expenses: {
+      input_amount: 'INTEGER',
+      input_currency: "TEXT NOT NULL DEFAULT 'CZK'",
+      input_nightly: 'INTEGER NOT NULL DEFAULT 0'
+    },
+    choices: { input_extra: 'INTEGER', input_currency: "TEXT NOT NULL DEFAULT 'CZK'" }
+  })) {
+    const existing = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    for (const [name, definition] of Object.entries(columns)) {
+      if (!existing.some((column) => column.name === name))
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+    }
+  }
+})();
 export const id = () => randomUUID();
 export const today = () => new Date().toISOString().slice(0, 10);
 export type Trip = {
@@ -134,8 +158,14 @@ export function tripData(tripId: string) {
         .all(e.id) as { tag_id: string }[];
       return rows.length ? rows.map((row) => row.tag_id) : e.tag_id ? [e.tag_id] : [];
     })(),
+    member_ids: (() => {
+      const rows = db.prepare('SELECT member_id FROM expense_members WHERE expense_id=? ORDER BY rowid').all(e.id) as { member_id: string }[];
+      return rows.length ? rows.map((row) => row.member_id) : undefined;
+    })(),
     choices: db
-      .prepare('SELECT member_id,mode,extra FROM choices WHERE expense_id=?')
+      .prepare(
+        'SELECT member_id,mode,extra,input_extra,input_currency FROM choices WHERE expense_id=?'
+      )
       .all(e.id) as Expense['choices']
   }));
   const payments = db

@@ -4,7 +4,7 @@ async function close(page: Page) {
   await page.locator('dialog[open]').getByRole('button', { name: 'Close', exact: true }).click();
 }
 
-test('EUR entry converts every amount to CZK and edits retain saved CZK', async ({ page }) => {
+test('EUR amounts stay editable in EUR while ledger totals use CZK', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
   await page.getByLabel('Name', { exact: true }).fill('Currency tester');
@@ -47,9 +47,30 @@ test('EUR entry converts every amount to CZK and edits retain saved CZK', async 
   await row.click();
   await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
   dialog = page.locator('dialog[open]');
-  await expect(dialog.getByLabel('Amount · CZK', { exact: true })).toHaveValue('92.25');
+  await expect(dialog.getByLabel('Per night · EUR', { exact: true })).toHaveValue('1.23');
+  await expect(dialog.getByRole('button', { name: 'EUR', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await expect(dialog.getByLabel('Amount per night', { exact: true })).toBeChecked();
   await dialog.getByRole('button', { name: 'Save changes' }).click();
   await expect(row.locator('.expense-total')).toHaveText(/^92,25/);
+  await page.reload();
+  await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await row.click();
+  await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
+  dialog = page.locator('dialog[open]');
+  await expect(dialog.getByLabel('Per night · EUR', { exact: true })).toHaveValue('1.23');
+  await dialog.getByLabel('Per night · EUR', { exact: true }).fill('2');
+  await dialog.getByRole('button', { name: 'Save changes' }).click();
+  await expect(row.locator('.expense-total')).toHaveText(/^150,00/);
+
+  // Legacy CZK entries still open with their saved amount.
+  await page.locator('.expense-row').filter({ hasText: 'Weekend groceries' }).click();
+  await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
+  dialog = page.locator('dialog[open]');
+  await expect(dialog.getByLabel('Amount · CZK', { exact: true })).toHaveValue('86.40');
+  await close(page);
 
   await page.getByRole('button', { name: 'Add expense', exact: true }).click();
   dialog = page.locator('dialog[open]');
@@ -70,6 +91,34 @@ test('EUR entry converts every amount to CZK and edits retain saved CZK', async 
   await expect(
     dialog.locator('.split-person').filter({ hasText: 'Currency tester' })
   ).toContainText('87,50');
+  await close(page);
+  await row.click();
+  dialog = page.locator('dialog[open]');
+  await expect(dialog.getByLabel('Extra · EUR', { exact: true })).toHaveValue('1');
+  await dialog.getByLabel('Extra · EUR', { exact: true }).fill('1.50');
+  await dialog.getByRole('button', { name: 'Update share' }).click();
+  await expect(
+    dialog.locator('.split-person').filter({ hasText: 'Currency tester' })
+  ).toContainText('100,00');
+  await close(page);
+  await row.click();
+  await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
+  dialog = page.locator('dialog[open]');
+  await expect(dialog.getByLabel('Amount · EUR', { exact: true })).toHaveValue('10.00');
+  await dialog.getByLabel('Amount · EUR', { exact: true }).fill('12');
+  await dialog.getByRole('button', { name: 'Save changes' }).click();
+  await expect(row.locator('.expense-total')).toHaveText(/^300,00/);
+  await row.click();
+  await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
+  dialog = page.locator('dialog[open]');
+  await expect(dialog.getByLabel('Amount · EUR', { exact: true })).toHaveValue('12.00');
+  await dialog.getByRole('button', { name: 'CZK', exact: true }).click();
+  await dialog.getByLabel('Amount · CZK', { exact: true }).fill('300');
+  await dialog.getByRole('button', { name: 'Save changes' }).click();
+  await row.click();
+  await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
+  dialog = page.locator('dialog[open]');
+  await expect(dialog.getByLabel('Amount · CZK', { exact: true })).toHaveValue('300.00');
   await close(page);
 
   const unsupported = await page.request.post(`${tripPath}?/expense`, {
@@ -124,15 +173,16 @@ test('EUR entry converts every amount to CZK and edits retain saved CZK', async 
   });
   await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
   await dialog.getByLabel('Receipt name').fill('Mixed receipt');
-  let item = dialog.locator('.review-item').first();
+  let item = dialog.locator('.receipt-product').first();
   await item.getByLabel('Item name', { exact: true }).fill('Euro item');
   await item.getByLabel('Item amount', { exact: true }).fill('1.25');
   await item.getByRole('button', { name: 'EUR', exact: true }).click();
   await dialog.getByRole('button', { name: 'Add item', exact: true }).click();
-  item = dialog.locator('.review-item').nth(1);
+  item = dialog.locator('.receipt-product').nth(1);
+  await item.getByRole('button', { name: 'CZK', exact: true }).click();
   await item.getByLabel('Item name', { exact: true }).fill('Crown item');
   await item.getByLabel('Item amount', { exact: true }).fill('3.50');
-  await expect(dialog.locator('.review-total strong')).toContainText('34,75');
+  await expect(dialog.locator('.receipt-subtotal strong')).toContainText('34,75');
   await page.screenshot({ path: 'test-results/currency-receipt-mobile.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await dialog.getByRole('button', { name: 'Add 2 items', exact: true }).click();
@@ -147,4 +197,13 @@ test('EUR entry converts every amount to CZK and edits retain saved CZK', async 
     page.locator('.expense-row').filter({ hasText: 'Crown item' }).locator('.expense-total')
   ).toHaveText(/^3,50/);
   await expect(page.locator('.expense-total')).not.toContainText(['EUR']);
+  await page.locator('.expense-row').filter({ hasText: 'Euro item' }).click();
+  await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
+  dialog = page.locator('dialog[open]');
+  await expect(dialog.getByLabel('Amount · EUR', { exact: true })).toHaveValue('1.25');
+  await dialog.getByLabel('Amount · EUR', { exact: true }).fill('2');
+  await dialog.getByRole('button', { name: 'Save changes' }).click();
+  await expect(
+    page.locator('.expense-row').filter({ hasText: 'Euro item' }).locator('.expense-total')
+  ).toHaveText(/^50,00/);
 });

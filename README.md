@@ -13,7 +13,7 @@ docker compose up -d --build
 
 Open <http://localhost:4827>. Podman works with the same files: `podman compose up -d --build`.
 
-`Containerfile` builds the app and its native SQLite dependency in a separate build stage. The running container uses the non-root `node` user. SQLite and uploaded receipts live in the `housik_data` named volume and survive container replacement. The service includes a health check.
+`Containerfile` builds the app and its native SQLite dependency in a separate build stage. The running container uses the non-root `node` user. SQLite and uploaded receipts live in the `housik_data` named volume and survive container replacement. The service includes a health check. Production Podman storage uses a `:U` volume mapping so the dedicated volume belongs to the container’s non-root user. New data and receipt directories use mode 0700, originals and the database use 0600. Startup verifies that database and receipt storage are writable; permission problems fail startup with a server-side ownership diagnostic.
 
 Set `OPENAI_API_KEY` in `.env` to enable receipt scanning. No API key is needed for the rest of the app. `.env`, local databases, uploads, and test data are excluded from the image and Git.
 
@@ -136,11 +136,15 @@ Balances include both original expense payments and recorded person-to-person pa
 
 ## Receipt scanning
 
-Set `OPENAI_API_KEY` in `.env`. `OPENAI_MODEL` defaults to `gpt-4.1-mini`; use a vision model supporting structured outputs and PDF input. JPG, PNG, WebP and PDF are supported up to 10 MB. Receipt content is sent to OpenAI when scanning is configured; without a key, uploading opens manual review automatically. Requests set `store: false`. No provider key reaches the browser. Review is mandatory, and EUR items convert automatically on import; other currencies require manually reviewed EUR or CZK amounts. Automated tests use a local exchange-rate fixture and make no live provider calls.
+Select up to 10 receipts (JPG, PNG, WebP or PDF, 10 MB per file). Previews appear in a scrollable grid of up to two columns and can be removed before Continue. Each file has its own processing animation and result badge. After all files finish, review a single vertical list grouped by receipt image, with editable items underneath and optional payer/date/split details; failed or unreadable scans retain the image and an empty row for manual entry. Preview images can be enlarged and zoomed. Receipts and item rows can be removed before import; names, dates, payers, currencies and split participants can be edited per receipt. The full batch imports atomically.
+
+Set `OPENAI_API_KEY` to scan automatically. `OPENAI_MODEL` defaults to `gpt-4.1-mini`. The backend makes one Responses API request per file, with that image/PDF attached and strict structured output `{ "products": [{ "name": "…", "amount": 125, "currency": "EUR" }] }`; amounts are integer minor units. OpenAI requires an object at the schema root, so the product array is wrapped in `products`. The exact prompt and schema are in `src/lib/server/receipt-scanner.ts`. Requests set `store: false`; receipt contents are sent to OpenAI only when scanning is configured. No key reaches the browser. Without a key, or after a scanner failure, manual review remains available. Provider concurrency is limited to two calls, and automated tests use a local provider fixture.
+
+Each imported receipt keeps its original file, creates a receipt-named tag with its own selected participants, and adds one Groceries expense per reviewed item. EUR is converted on the server using the cached rate; all ledger amounts remain CZK. Original input currency/amount remain available when editing. Unknown currencies require manual review.
 
 ## Storage and sessions
 
-`DATABASE_PATH` defaults to `./data/housik.sqlite`; `UPLOAD_DIR` defaults to `./data/receipts`. SQLite enables foreign keys and WAL. Back up the database using SQLite's backup API or stop the app before copying the database and receipt directory together. The schema is created automatically for this initial version.
+`DATABASE_PATH` defaults to `./data/housik.sqlite`; `UPLOAD_DIR` defaults to `./data/receipts`. Originals remain in private filesystem storage under `UPLOAD_DIR`, with UUID filenames and no public static route. The server checks trip membership before serving them with private/no-store headers. Abandoned drafts are removed after 24 hours during subsequent uploads. SQLite enables foreign keys and WAL. Back up the database using SQLite's backup API or stop the app before copying the database and receipt directory together. The schema is created automatically for this initial version.
 
 Passwords use scrypt with random salts. Browser cookies are HTTP-only, SameSite=Lax, and secure on HTTPS. Sessions have no server-side expiry; the persistent cookie renews on use for 400 days, subject to browser retention limits. Signing out revokes that session. Passwords and session tokens are never stored in plaintext. There is no password recovery flow in this initial version.
 
@@ -161,8 +165,9 @@ npm test
 npx playwright install chromium
 npm run test:e2e
 npm run test:pwa
+npm run test:receipts
 ```
 
-Browser tests use a separate SQLite database and receipt directory. `test:pwa` builds a production fixture and verifies the manifest, icons, service worker, offline recovery and cache boundaries. For headed tests/screenshots on the shared Linux machine, use the `isolated-gui` skill available in your agent environment and its private display/session; never use the user's display. `HEADED=1` enables a visible test browser on that private display. `E2E_EXTERNAL_SERVER=1` uses an already-running fixture server at port 5180.
+Browser tests use a separate SQLite database and receipt directory. `test:receipts` covers multiple files, provider success/failure, manual fallback, removal, atomic import and access controls. Set `HOUSIK_E2E_PORT` to use a separate fixture port. `test:pwa` builds a production fixture and verifies the manifest, icons, service worker, offline recovery and cache boundaries. For headed tests/screenshots on the shared Linux machine, use the `isolated-gui` skill available in your agent environment and its private display/session; never use the user's display. `HEADED=1` enables a visible test browser on that private display. `E2E_EXTERNAL_SERVER=1` uses an already-running fixture server at port 5180.
 
 Implementation references: [SvelteKit](https://svelte.dev/docs/kit), [OpenAI image inputs](https://developers.openai.com/api/docs/guides/images-vision).

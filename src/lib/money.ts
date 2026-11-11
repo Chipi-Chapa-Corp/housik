@@ -13,6 +13,7 @@ export function cents(value: unknown): number {
 }
 
 export function defaultMembers(expense: Expense, members: Member[], tags: Tag[]): string[] {
+  if (expense.member_ids?.length) return expense.member_ids;
   const ids = expense.tag_ids ?? (expense.tag_id ? [expense.tag_id] : []);
   if (!ids.length) return members.map((member) => member.id);
   return [...new Set(tags.filter((tag) => ids.includes(tag.id)).flatMap((tag) => tag.members))];

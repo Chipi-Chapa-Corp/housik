@@ -1120,6 +1120,19 @@ dialog::backdrop {
   color: #4b5056;
   line-height: 1.7;
 }
+.field-error {
+  display: block;
+  grid-column: 1 / -1;
+  color: var(--ink);
+  font-weight: 400;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+input[aria-invalid='true'],
+select[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: #898989;
+}
 .segmented {
   background: #f5f5f5;
   border: 1px solid #eaeaea;

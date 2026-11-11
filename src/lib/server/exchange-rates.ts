@@ -19,9 +19,17 @@ export function startRateRefresh() {
   void poll();
 }
 
-export async function convertInput(value: unknown, currency: unknown = 'CZK', nights = 1) {
+export async function amountInput(value: unknown, currency: unknown = 'CZK', nights = 1) {
   const selected = inputCurrency(currency);
   const amount = cents(value);
   const rate = selected === 'EUR' ? await exchangeRates.refresh() : null;
-  return toCzk(amount, selected, rate?.rate ?? null, nights);
+  return {
+    amount: toCzk(amount, selected, rate?.rate ?? null, nights),
+    input_amount: amount,
+    input_currency: selected
+  };
+}
+
+export async function convertInput(value: unknown, currency: unknown = 'CZK', nights = 1) {
+  return (await amountInput(value, currency, nights)).amount;
 }

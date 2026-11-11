@@ -147,7 +147,9 @@ export const actions: Actions = {
         ['Sauna credits', 3600, 3, 'other', null, 'Benefit credits']
       ];
       for (const [title, amount, payer, kind, tag, note] of entries)
-        db.prepare('INSERT INTO expenses VALUES(?,?,?,?,?,?,?,?,?,?)').run(
+        db.prepare(
+          'INSERT INTO expenses(id,trip_id,title,amount,payer_id,kind,tag_id,receipt_id,note,date) VALUES(?,?,?,?,?,?,?,?,?,?)'
+        ).run(
           id(),
           tripId,
           title,

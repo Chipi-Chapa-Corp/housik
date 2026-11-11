@@ -5,8 +5,8 @@ import { tripNights } from '#lib/dates.ts';
 import { requireSession, logout, text, validDate, locationUrl } from '#lib/server/auth.ts';
 import { allocate, balances, settle } from '#lib/money.ts';
 import * as env from '$app/env/private';
-import { commitReceipt } from '#lib/server/receipts.ts';
-import { convertInput, exchangeRates } from '#lib/server/exchange-rates.ts';
+import { commitReceipt, commitReceipts } from '#lib/server/receipts.ts';
+import { amountInput, convertInput, exchangeRates } from '#lib/server/exchange-rates.ts';
 
 export const load: PageServerLoad = async (event) => {
   const session = requireSession(event);
@@ -77,9 +77,13 @@ export const actions: Actions = {
       payer = text(f, 'payer'),
       kind = text(f, 'kind'),
       date = validDate(text(f, 'date'));
-    const nights =
-      kind === 'rent' && f.get('nightly') === 'true' ? tripData(s.trip_id).trip.nights : 1;
-    const amount = await convertInput(f.get('amount'), f.get('currency') ?? 'CZK', nights);
+    const nightly = kind === 'rent' && f.get('nightly') === 'true';
+    const nights = nightly ? tripData(s.trip_id).trip.nights : 1;
+    const { amount, input_amount, input_currency } = await amountInput(
+      f.get('amount'),
+      f.get('currency') ?? 'CZK',
+      nights
+    );
     if (!amount) throw new Error('Amount must be greater than zero.');
     if (!['rent', 'product', 'other'].includes(kind)) throw new Error('Choose an expense type.');
     memberExists(s.trip_id, payer);
@@ -87,6 +91,14 @@ export const actions: Actions = {
     for (const tagId of selected) {
       if (!db.prepare('SELECT 1 FROM tags WHERE id=? AND trip_id=?').get(tagId, s.trip_id))
         throw new Error('Choose tags from this trip.');
+    }
+    let memberIds: string[] | undefined;
+    if (f.has('member_ids')) {
+      const raw = JSON.parse(String(f.get('member_ids')));
+      if (!Array.isArray(raw) || !raw.length || raw.some((member) => typeof member !== 'string'))
+        throw new Error('Choose who shares this expense.');
+      memberIds = [...new Set(raw as string[])];
+      for (const member of memberIds) memberExists(s.trip_id, member);
     }
     const existing = db
       .prepare('SELECT 1 FROM expenses WHERE id=? AND trip_id=?')
@@ -96,7 +108,7 @@ export const actions: Actions = {
     db.transaction(() => {
       if (existing)
         db.prepare(
-          'UPDATE expenses SET title=?,amount=?,payer_id=?,kind=?,tag_id=?,note=?,date=? WHERE id=? AND trip_id=?'
+          'UPDATE expenses SET title=?,amount=?,payer_id=?,kind=?,tag_id=?,note=?,date=?,input_amount=?,input_currency=?,input_nightly=? WHERE id=? AND trip_id=?'
         ).run(
           title,
           amount,
@@ -105,11 +117,16 @@ export const actions: Actions = {
           tag,
           String(f.get('note') || '').slice(0, 300),
           date,
+          input_amount,
+          input_currency,
+          Number(nightly),
           expenseId,
           s.trip_id
         );
       else
-        db.prepare('INSERT INTO expenses VALUES(?,?,?,?,?,?,?,?,?,?)').run(
+        db.prepare(
+          'INSERT INTO expenses(id,trip_id,title,amount,payer_id,kind,tag_id,receipt_id,note,date,input_amount,input_currency,input_nightly) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)'
+        ).run(
           expenseId,
           s.trip_id,
           title,
@@ -119,11 +136,18 @@ export const actions: Actions = {
           tag,
           null,
           String(f.get('note') || '').slice(0, 300),
-          date
+          date,
+          input_amount,
+          input_currency,
+          Number(nightly)
         );
       db.prepare('DELETE FROM expense_tags WHERE expense_id=?').run(expenseId);
       for (const member of selected)
         db.prepare('INSERT INTO expense_tags VALUES(?,?)').run(expenseId, member);
+      if (memberIds) {
+        db.prepare('DELETE FROM expense_members WHERE expense_id=?').run(expenseId);
+        for (const member of memberIds) db.prepare('INSERT INTO expense_members VALUES(?,?)').run(expenseId, member);
+      }
       assertAllocations(s.trip_id);
     })();
   }),
@@ -141,13 +165,18 @@ export const actions: Actions = {
       throw new Error('Choose how to split.');
     if (!db.prepare('SELECT 1 FROM expenses WHERE id=? AND trip_id=?').get(expenseId, s.trip_id))
       throw new Error('Expense not found.');
-    const extra =
-      mode === 'extra' ? await convertInput(f.get('extra'), f.get('currency') ?? 'CZK') : 0;
+    const input =
+      mode === 'extra'
+        ? await amountInput(f.get('extra'), f.get('currency') ?? 'CZK')
+        : { amount: 0, input_amount: 0, input_currency: 'CZK' };
+    const extra = input.amount;
     if (mode === 'extra' && extra <= 0) throw new Error('Enter a positive extra contribution.');
     db.transaction(() => {
       db.prepare('DELETE FROM choices WHERE expense_id=? AND member_id=?').run(expenseId, member);
       if (mode !== 'default')
-        db.prepare('INSERT INTO choices VALUES(?,?,?,?)').run(expenseId, member, mode, extra);
+        db.prepare(
+          'INSERT INTO choices(expense_id,member_id,mode,extra,input_extra,input_currency) VALUES(?,?,?,?,?,?)'
+        ).run(expenseId, member, mode, extra, input.input_amount, input.input_currency);
       assertAllocations(s.trip_id);
     })();
   }),
@@ -231,6 +260,10 @@ export const actions: Actions = {
       location,
       s.trip_id
     );
+  }),
+  importReceipts: wrap(async (event, f) => {
+    const session = requireSession(event, true);
+    await commitReceipts(session.trip_id, JSON.parse(String(f.get('receipts') || '[]')));
   }),
   importReceipt: wrap(async (event, f) => {
     const s = requireSession(event, true);

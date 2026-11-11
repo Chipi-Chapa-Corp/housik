@@ -4,8 +4,13 @@
 
 <div class="currency-toggle" role="group" aria-label="Currency">
   {#each ['EUR', 'CZK'] as option}
-    <button type="button" aria-pressed={currency === option} onclick={() => (currency = option)}>
-      {option}
+    <button
+      type="button"
+      aria-label={option}
+      aria-pressed={currency === option}
+      onclick={() => (currency = option)}
+    >
+      {option === 'CZK' ? 'Kc' : 'E'}
     </button>
   {/each}
 </div>

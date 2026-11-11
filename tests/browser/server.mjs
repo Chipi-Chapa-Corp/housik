@@ -1,15 +1,75 @@
 // Keep browser tests independent of live exchange-rate providers.
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-const provider = createServer((_request, response) => {
+const calls = [];
+const fixture = process.env.HOUSIK_RECEIPT_FIXTURE === 'true';
+function saveCalls() {
+  if (fixture) {
+    mkdirSync(process.env.HOUSIK_TEST_DIR, { recursive: true });
+    writeFileSync(join(process.env.HOUSIK_TEST_DIR, 'provider-calls.json'), JSON.stringify(calls));
+  }
+}
+saveCalls();
+const provider = createServer(async (request, response) => {
+  if (request.url === '/responses' && fixture) {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks).toString());
+    calls.push(body);
+    saveCalls();
+    const content = body.input[0].content[0];
+    const bytes = Buffer.from((content.image_url || content.file_data).split(',')[1], 'base64');
+    const failed = bytes.toString().endsWith('fail');
+    const empty = bytes.toString().endsWith('empty');
+    await new Promise((resolve) => setTimeout(resolve, failed ? 1800 : 650));
+    response.writeHead(failed ? 503 : 200, { 'content-type': 'application/json' });
+    response.end(
+      JSON.stringify(
+        failed
+          ? { error: 'fixture upstream unavailable' }
+          : {
+              output: [
+                {
+                  content: [
+                    {
+                      type: 'output_text',
+                      text: JSON.stringify({
+                        products: empty
+                          ? []
+                          : [
+                              {
+                                name: 'Scanned coffee',
+                                amount: 125,
+                                currency: bytes.toString().endsWith('unknown') ? null : 'EUR'
+                              }
+                            ]
+                      })
+                    }
+                  ]
+                }
+              ]
+            }
+      )
+    );
+    return;
+  }
   response.writeHead(200, { 'content-type': 'application/json' });
   response.end(JSON.stringify({ date: '2026-11-11', base: 'EUR', quote: 'CZK', rate: 25 }));
 });
 await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
 const env = {
   ...process.env,
-  EXCHANGE_RATE_URL: `http://127.0.0.1:${provider.address().port}/rate`
+  EXCHANGE_RATE_URL: `http://127.0.0.1:${provider.address().port}/rate`,
+  ...(fixture
+    ? {
+        OPENAI_API_KEY: 'fixture-key',
+        OPENAI_MODEL: 'fixture-model',
+        OPENAI_RESPONSES_URL: `http://127.0.0.1:${provider.address().port}/responses`
+      }
+    : {})
 };
 let child;
 function run(args) {
@@ -37,7 +97,7 @@ if (!code)
     '--host',
     '127.0.0.1',
     '--port',
-    '5180',
+    process.env.HOUSIK_E2E_PORT || '5180',
     '--strictPort'
   ]);
 provider.close();

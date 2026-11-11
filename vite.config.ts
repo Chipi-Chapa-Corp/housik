@@ -7,7 +7,7 @@ export default defineConfig({
   cacheDir: testDirectory ? `${testDirectory}/vite-cache` : undefined,
   plugins: [
     sveltekit({
-      adapter: adapter(),
+      adapter: adapter({ out: testDirectory ? `${testDirectory}/build` : 'build' }),
       preprocess: vitePreprocess(),
       outDir: testDirectory ? `${testDirectory}/kit` : '.svelte-kit'
     })

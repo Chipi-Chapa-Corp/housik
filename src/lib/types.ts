@@ -4,12 +4,17 @@ export type Choice = {
   member_id: string;
   mode: 'share' | 'exclude' | 'full' | 'extra';
   extra: number;
+  input_extra?: number | null;
+  input_currency?: 'EUR' | 'CZK';
 };
 export type Expense = {
   id: string;
   trip_id: string;
   title: string;
   amount: number;
+  input_amount?: number | null;
+  input_currency?: 'EUR' | 'CZK';
+  input_nightly?: number;
   payer_id: string;
   kind: 'rent' | 'product' | 'other';
   tag_id: string | null;
@@ -18,6 +23,7 @@ export type Expense = {
   date: string;
   choices: Choice[];
   tag_ids?: string[];
+  member_ids?: string[];
 };
 export type Payment = {
   id: string;

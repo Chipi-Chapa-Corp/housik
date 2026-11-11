@@ -21,7 +21,6 @@
     Car,
     X,
     Upload,
-    Sparkles,
     Trash2,
     Pencil,
     Download,
@@ -35,6 +34,9 @@
   import NameBubble from '#lib/NameBubble.svelte';
   import TagSelect from '#lib/TagSelect.svelte';
   import AmountInput from '#lib/AmountInput.svelte';
+  import ReceiptImport from '#lib/ReceiptImport.svelte';
+  import ReceiptPreview from '#lib/ReceiptPreview.svelte';
+  import ReceiptViewer from '#lib/ReceiptViewer.svelte';
   import { cents } from '#lib/money.ts';
   import { inputCurrency, toCzk } from '#lib/currency.ts';
   import type { Expense, Tag, Payment } from '#lib/types.ts';
@@ -63,15 +65,7 @@
     choiceExtra = $state('');
   let paymentFrom = $state(''),
     paymentAmount = $state('');
-  let receiptFile = $state<File | null>(null),
-    receiptPayer = $state(''),
-    scanning = $state(false);
-  let draft = $state<{
-    id: string;
-    merchant: string;
-    currency: string;
-    items: { title: string; amount: string; currency: string }[];
-  } | null>(null);
+  let viewedReceipt = $state<{ src: string; mime: string; name: string } | null>(null);
   let memberUsername = $state('');
   let settingsArrival = $state('');
   const owner = $derived(data.session.role === 'owner');
@@ -130,9 +124,9 @@
     editing = e;
     expenseTags = [...(e.tag_ids ?? (e.tag_id ? [e.tag_id] : []))];
     kind = e.kind;
-    expenseAmount = (e.amount / 100).toFixed(2);
-    expenseCurrency = 'CZK';
-    nightly = false;
+    expenseAmount = ((e.input_amount ?? e.amount) / 100).toFixed(2);
+    expenseCurrency = e.input_currency ?? 'CZK';
+    nightly = !!e.input_nightly;
     open('expense');
   }
   function viewExpense(e: Expense) {
@@ -142,9 +136,10 @@
   }
   function syncChoice(member: string, e = current) {
     const c = e?.choices.find((c) => c.member_id === member);
-    choiceCurrency = 'CZK';
+    choiceCurrency = c?.input_currency ?? 'CZK';
     choiceMode = c?.mode || 'default';
-    choiceExtra = c?.extra ? String(c.extra / 100) : '';
+    const extra = c?.input_extra ?? c?.extra;
+    choiceExtra = extra ? String(extra / 100) : '';
   }
   function recordPayment(from = '', amount = 0) {
     paymentFrom = from || data.members.find((m) => m.id !== data.session.member_id)?.id || '';
@@ -153,9 +148,6 @@
     open('payment');
   }
   function newReceipt() {
-    draft = null;
-    receiptFile = null;
-    receiptPayer = data.session.member_id || data.members[0].id;
     open('receipt');
   }
   const submit: SubmitFunction = () => {
@@ -172,34 +164,6 @@
       } else await update();
     };
   };
-  async function scan() {
-    if (!receiptFile) return;
-    scanning = true;
-    message = '';
-    const f = new FormData();
-    f.set('file', receiptFile);
-    f.set('payer', receiptPayer);
-    f.set('manual', String(!data.scanning));
-    try {
-      const res = await fetch(`/trip/${data.trip.id}/scan`, { method: 'POST', body: f });
-      const value = await res.json();
-      if (!res.ok) throw new Error(value.error || 'Could not read receipt.');
-      draft = {
-        ...value,
-        items: value.items.map((i: { title: string; amount: number }) => ({
-          ...i,
-          amount: (i.amount / 100).toFixed(2),
-          currency: value.currency
-        }))
-      };
-      if (!draft!.items.length)
-        draft!.items.push({ title: '', amount: '', currency: value.currency });
-    } catch (e) {
-      message = e instanceof Error ? e.message : 'Could not read receipt.';
-    } finally {
-      scanning = false;
-    }
-  }
   function czkPreview(value: string, currency: string, nights = 1) {
     try {
       return toCzk(
@@ -561,6 +525,17 @@
         </div>
         {#if data.receipts.length}<div class="receipt-grid">
             {#each data.receipts as receipt}<article class="receipt-card">
+                <ReceiptPreview
+                  src={`/trip/${data.trip.id}/receipt/${receipt.id}`}
+                  mime={receipt.mime}
+                  name={receipt.merchant}
+                  onEnlarge={() =>
+                    (viewedReceipt = {
+                      src: `/trip/${data.trip.id}/receipt/${receipt.id}`,
+                      mime: receipt.mime,
+                      name: receipt.merchant
+                    })}
+                />
                 <div class="receipt-card-top">
                   <span class="expense-icon product"><ReceiptText size={24} /></span><span
                     class="badge"
@@ -915,106 +890,16 @@
       </div>
     </form>{/if}
 </Modal>
-<Modal
-  onClose={() => (modal = '')}
+<ReceiptImport
   open={modal === 'receipt'}
-  title={draft ? 'Review receipt' : 'Receipt'}
-  wide={!!draft}
->
-  {#if !draft}<div class="stack">
-      <label
-        >Paid by<select bind:value={receiptPayer}
-          >{#each data.members as m}<option value={m.id}>{m.name}</option>{/each}</select
-        ></label
-      ><label class="upload-zone"
-        ><Upload size={28} strokeWidth={1.4} /><strong>{receiptFile?.name || 'Choose file'}</strong
-        ><input
-          type="file"
-          accept="image/jpeg,image/png,image/webp,application/pdf"
-          onchange={(e) => (receiptFile = e.currentTarget.files?.[0] || null)}
-        /></label
-      >{#if message}<p class="form-error" role="alert">{message}</p>{/if}<button
-        class="btn primary full"
-        disabled={!receiptFile || scanning}
-        onclick={scan}
-        >{#if scanning}<span class="spinner"></span>Scanning…{:else if !data.scanning}<ArrowRight
-            size={16}
-          />Continue{:else}<Sparkles size={16} />Scan receipt{/if}</button
-      >
-    </div>
-  {:else}<form method="POST" action="?/importReceipt" use:enhance={submit} class="stack">
-      <input type="hidden" name="draft" value={draft.id} />
-      <label
-        >Receipt name<input
-          name="merchant"
-          bind:value={draft.merchant}
-          maxlength="80"
-          required
-        /></label
-      >
-      {#if draft.items.some((item) => !['EUR', 'CZK'].includes(item.currency))}
-        <p class="form-error">Receipt uses {draft.currency}. Enter EUR or CZK amounts.</p>
-      {/if}
-      <label>Date<input type="date" name="date" value={today} required /></label>
-      <div class="review-items">
-        <div class="review-labels"><span>ITEM</span><span>AMOUNT</span><span></span></div>
-        {#each draft.items as item, i}<div class="review-item">
-            <input aria-label="Item name" bind:value={item.title} required maxlength="100" />
-            <AmountInput
-              name={null}
-              currencyName={null}
-              compact
-              label="Item amount"
-              bind:value={item.amount}
-              bind:currency={item.currency}
-              rate={data.exchangeRate?.rate ?? null}
-            />
-            <button
-              class="icon-btn"
-              type="button"
-              aria-label="Remove item"
-              onclick={() => draft!.items.splice(i, 1)}><X size={15} /></button
-            >
-          </div>{/each}
-      </div>
-      <input type="hidden" name="items" value={JSON.stringify(draft.items)} />
-      <div class="review-total">
-        <button
-          type="button"
-          class="text-btn"
-          onclick={() =>
-            draft!.items.push({
-              title: '',
-              amount: '',
-              currency: ['EUR', 'CZK'].includes(draft!.currency) ? draft!.currency : 'CZK'
-            })}><Plus size={14} />Add item</button
-        ><strong
-          >Total {money(
-            draft.items.reduce((sum, item) => sum + czkPreview(item.amount, item.currency), 0)
-          )}</strong
-        >
-      </div>
-      <fieldset class="member-checkboxes">
-        <legend>Split between</legend>{#each data.members as m}<label class="checkbox"
-            ><input type="checkbox" name="members" value={m.id} checked /><NameBubble
-              name={m.name}
-              color={m.color}
-            /></label
-          >{/each}
-      </fieldset>
-      {#if message}<p class="form-error" role="alert">{message}</p>{/if}
-      <div class="modal-actions">
-        <a
-          class="text-btn"
-          href="/trip/{data.trip.id}/receipt/{draft.id}"
-          target="_blank"
-          rel="noreferrer">View original <ArrowUpRight size={14} /></a
-        ><button
-          class="btn primary"
-          disabled={busy ||
-            draft.items.some((item) => !['EUR', 'CZK'].includes(item.currency)) ||
-            !draft.items.length}>Add {draft.items.length} items <Check size={16} /></button
-        >
-      </div>
-    </form>{/if}
-</Modal>
+  tripId={data.trip.id}
+  members={data.members}
+  rate={data.exchangeRate?.rate ?? null}
+  onClose={() => (modal = '')}
+  onSaved={async () => {
+    await refreshAll();
+    notice = 'Saved';
+    setTimeout(() => (notice = ''), 2400);
+  }}
+/>
+<ReceiptViewer receipt={viewedReceipt} onClose={() => (viewedReceipt = null)} />

@@ -26,7 +26,7 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/build ./build
-RUN mkdir -p /app/data && chown node:node /app/data
+RUN install -d -m 0700 -o node -g node /app/data
 
 USER node
 EXPOSE 3000

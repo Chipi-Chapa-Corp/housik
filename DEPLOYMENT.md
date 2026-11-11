@@ -36,6 +36,16 @@ Compose does not create or remove it. Ordinary redeployments preserve it.
 The original deployment's data was migrated from `infra-housik-data`, with
 an offline archive retained in `/home/kitkat/backups/` on the server.
 
+The volume directory must belong to the app's container user (`node`, UID/GID
+1000:1000). A migrated database can have the right ownership while its parent
+volume directory remains root-owned, allowing database writes but preventing
+creation of `receipts`. The image's `/app/data` ownership is hidden by the mount.
+Production uses Podman's `:U` option on this dedicated volume to apply the
+container user's mapped ownership when the container is created. This option
+recursively changes ownership inside that volume; do not apply it to a shared
+host directory. The app stays non-root, and SELinux stays enabled. Startup checks
+both database and receipt directory writability before serving requests.
+
 The production Compose file trusts the forwarded host, protocol, and client
 IP headers supplied by Tailscale. Keep the backend bound to loopback. It
 derives its public HTTPS origin from those headers, so `ORIGIN` is not set

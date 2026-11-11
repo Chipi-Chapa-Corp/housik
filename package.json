@@ -11,6 +11,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc --project src/service-worker/tsconfig.json",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
+    "test:receipts": "playwright test --config playwright.receipts.config.ts",
     "test:pwa": "playwright test --config playwright.pwa.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

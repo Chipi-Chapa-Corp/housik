@@ -6,12 +6,14 @@
     title,
     children,
     wide = false,
+    width,
     onClose
   }: {
     open?: boolean;
     title: string;
     children: Snippet;
     wide?: boolean;
+    width?: string;
     onClose?: () => void;
   } = $props();
   let dialog: HTMLDialogElement;
@@ -29,6 +31,7 @@
 <dialog
   bind:this={dialog}
   class:wide
+  style:width
   onclose={() => {
     if (open) dismiss();
   }}
