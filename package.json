@@ -8,9 +8,10 @@
     "build": "vite build",
     "start": "node --env-file-if-exists=.env build",
     "preview": "vite preview --host 127.0.0.1",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc --project src/service-worker/tsconfig.json",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
+    "test:pwa": "playwright test --config playwright.pwa.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

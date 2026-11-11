@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 const fixtureDir = `./.test-data/${Date.now()}`;
 export default defineConfig({
   testDir: './tests/browser',
+  testIgnore: '**/pwa.spec.ts',
   fullyParallel: false,
   workers: 1,
   timeout: 60000,

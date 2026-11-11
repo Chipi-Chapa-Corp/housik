@@ -110,6 +110,14 @@ Open the URL printed by Vite. Enter a name (up to 20 characters) and password; a
 
 Invite a person's name from the trip. They may already have an account or create it later using that name. Their trip appears after sign-in. Names are case-insensitive. The URL alone does not grant access. Invitations apply immediately; include only names belonging to the intended person.
 
+## Install as an app
+
+Housik supports installation as a PWA with a home-screen icon and a standalone window. Serve it over HTTPS (localhost also works for development). On Android, use the browser menu's Install app or Add to Home screen action. On iPhone, use Safari's Share → Add to Home Screen and enable Open as Web App when offered.
+
+The service worker caches only public app assets and an offline screen. Trip data, receipts, sign-in and payments require a connection; private pages are never cached and changes are not queued offline. Reconnecting and selecting Try again returns to the requested page. Updates activate after existing app windows close.
+
+Icons are PNG exports of `static/favicon.svg`, with an opaque square background; the maskable variant adds padding around the house.
+
 ## Currency and interface
 
 All trips use CZK. The initial placeholder EUR entries are relabeled as CZK without changing their amounts, as requested. UI text uses 1rem throughout. The personal summary shows the signed-in member’s signed remaining balance (+ receive / − pay); the Settle card opens settlements. Expenses show plain full expense totals. People cards show the signed balance calculation: purchases paid + transfers sent − share − received. Transfers settle the trip balance and are not assigned to individual expense lines. Confirmed payments use green + amounts and require confirmation before undo.
@@ -148,8 +156,9 @@ npm run check
 npm test
 npx playwright install chromium
 npm run test:e2e
+npm run test:pwa
 ```
 
-Browser tests use a separate SQLite database and receipt directory. For headed tests/screenshots on the shared Linux machine, use the `isolated-gui` skill available in your agent environment and its private display/session; never use the user's display. `HEADED=1` enables a visible test browser on that private display. `E2E_EXTERNAL_SERVER=1` uses an already-running fixture server at port 5180.
+Browser tests use a separate SQLite database and receipt directory. `test:pwa` builds a production fixture and verifies the manifest, icons, service worker, offline recovery and cache boundaries. For headed tests/screenshots on the shared Linux machine, use the `isolated-gui` skill available in your agent environment and its private display/session; never use the user's display. `HEADED=1` enables a visible test browser on that private display. `E2E_EXTERNAL_SERVER=1` uses an already-running fixture server at port 5180.
 
 Implementation references: [SvelteKit](https://svelte.dev/docs/kit), [OpenAI image inputs](https://developers.openai.com/api/docs/guides/images-vision).
