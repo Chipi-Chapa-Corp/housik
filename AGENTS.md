@@ -1,0 +1,9 @@
+For agent-owned Linux GUI tests, screenshots, diagnostics and automation, use the `isolated-gui` skill available in the agent environment. Run on the helper's private display and D-Bus session; never fall back to the user's display or session bus. Use separate profiles and fixture data. Explicit requests to control an existing user app/tab are not redirected.
+
+Keep UI text minimal: no slogans, decorative labels, repeated headings or icon-plus-name branding. Use concise functional labels.
+
+Use 1rem for every visible text element, darker readable grays, and retain the original soft design. Use CZK. Show the current user’s remaining balance as You receive / You pay and label the action Settle. No balances panel on Expenses. No home wordmark or Trips heading: New trip on the left, username/logout on the right. Only receivers may confirm or undo payments; enforce this on the server for owners and guests alike.
+
+Use neutral gray surfaces, dark readable text and distinct pastel full-name pills; no initial avatars. Invite belongs only on People. Settings sits at the right end of the trip-name row. Share with is a multiselect of tags (union of their members). Extras add to the volunteer’s original share and never reduce their charges elsewhere.
+
+Use signed colored amounts: the summary and unpaid settlements show the current user’s direction (+ receive, − owe). Expenses show plain neutral full expense totals. People cards use a signed breakdown matching net balance: share negative, purchases paid positive, transfers sent positive, received negative. Confirmed payments are green +. Ask for confirmation before undoing a received payment. Label the add-payment button + Payment. Toasts use the browser top layer above dialogs. No manual-entry checkbox; scan automatically when configured, otherwise use the manual review fallback.

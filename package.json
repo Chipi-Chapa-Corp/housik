@@ -1,0 +1,42 @@
+{
+  "name": "housik",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --host 127.0.0.1",
+    "build": "vite build",
+    "start": "node --env-file-if-exists=.env build",
+    "preview": "vite preview --host 127.0.0.1",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@lucide/svelte": "^1.71.0",
+    "@sveltejs/adapter-node": "^6.0.2",
+    "@sveltejs/kit": "^3.2.0",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "better-sqlite3": "^12.0.0",
+    "svelte": "^5.0.0",
+    "vite": "^8.0.12"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.0.0",
+    "prettier": "^3.9.10",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte-check": "^4.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^6.0.0"
+  },
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
+  "engines": {
+    "node": ">=22.17.0"
+  }
+}
