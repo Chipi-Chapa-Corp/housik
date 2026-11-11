@@ -394,10 +394,13 @@
                           size={11}
                         />{/if}{#if expense.tag_ids?.length}{#each expense.tag_ids as tag}<span
                             class="tag-pill">{data.tags.find((t) => t.id === tag)?.name}</span
-                          >{/each}{:else}{expense.kind === 'rent'
-                          ? `${data.trip.nights} nights · ${money(Math.round(expense.amount / data.trip.nights))} / night`
-                          : expense.note || ''}{/if}{#if expense.choices.length}<span
-                          class="custom-share">Custom split</span
+                          >{/each}{/if}{#if expense.kind === 'rent'}<span
+                          >{data.trip.nights} nights · {money(
+                            Math.round(expense.amount / data.trip.nights)
+                          )} / night</span
+                        >{:else if !expense.tag_ids?.length}{expense.note ||
+                          ''}{/if}{#if expense.choices.length}<span class="custom-share"
+                          >Custom split</span
                         >{/if}</span
                     ></span
                   ></span

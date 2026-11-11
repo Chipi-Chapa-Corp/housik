@@ -21,6 +21,12 @@ test('EUR entry converts every amount to CZK and edits retain saved CZK', async 
   await dialog.getByRole('button', { name: 'EUR', exact: true }).click();
   await dialog.getByLabel('Amount · EUR', { exact: true }).fill('1.23');
   await dialog.getByLabel('Amount per night', { exact: true }).check();
+  await dialog.getByRole('button', { name: 'Share with', exact: true }).click();
+  await dialog
+    .locator('.people-options.open')
+    .getByRole('checkbox', { name: 'Groceries', exact: true })
+    .check();
+  await dialog.getByRole('button', { name: 'Share with', exact: true }).click();
   await expect(dialog.locator('.rent-total')).toContainText('92,25');
   const amountBox = await dialog.getByLabel('Per night · EUR', { exact: true }).boundingBox();
   const payerBox = await dialog
@@ -34,6 +40,10 @@ test('EUR entry converts every amount to CZK and edits retain saved CZK', async 
   await dialog.getByRole('button', { name: 'Add expense', exact: true }).click();
   let row = page.locator('.expense-row').filter({ hasText: 'Euro stay' });
   await expect(row.locator('.expense-total')).toHaveText(/^92,25/);
+  await expect(row.locator('.expense-meta .tag-pill')).toHaveText('Groceries');
+  await expect(row.locator('.expense-meta')).toContainText('3 nights · 30,75');
+  await expect(row.locator('.expense-meta')).toContainText('/ night');
+  await row.screenshot({ path: 'test-results/tagged-stay.png' });
   await row.click();
   await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
   dialog = page.locator('dialog[open]');

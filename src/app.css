@@ -1,5 +1,6 @@
-@import 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap';
+@import './fonts.css';
 :root {
+  --font-ui: 'Noto Sans', sans-serif;
   color: #343434;
   font-synthesis: none;
   --green: #303842;
@@ -9,9 +10,7 @@
   --paper: #ffffff;
   --lime: #e8e8e8;
   background: #f7f7f7;
-  font-family:
-    DM Sans,
-    sans-serif;
+  font-family: var(--font-ui);
 }
 * {
   box-sizing: border-box;
@@ -59,7 +58,7 @@ h1,
 h2,
 h3 {
   letter-spacing: -0.045em;
-  font-family: Manrope, sans-serif;
+  font-family: var(--font-ui);
 }
 h1 {
   font-weight: 650;
@@ -103,7 +102,7 @@ select:focus {
   letter-spacing: -1.5px;
   align-items: center;
   gap: 9px;
-  font-family: Manrope, sans-serif;
+  font-family: var(--font-ui);
   font-weight: 800;
   display: flex;
 }
@@ -536,7 +535,7 @@ nav button:hover {
 }
 .stat > strong {
   letter-spacing: -1.3px;
-  font-family: Manrope, sans-serif;
+  font-family: var(--font-ui);
   font-weight: 650;
 }
 .stat > span {
@@ -593,9 +592,7 @@ nav button:hover {
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
-  font-family:
-    DM Sans,
-    sans-serif;
+  font-family: var(--font-ui);
   font-weight: 500;
   display: inline-flex;
 }
@@ -894,7 +891,7 @@ nav button:hover {
   letter-spacing: -1.2px;
   color: #4b5056;
   margin: 24px 0;
-  font-family: Manrope, sans-serif;
+  font-family: var(--font-ui);
   font-weight: 600;
   display: block;
 }
@@ -1066,7 +1063,7 @@ nav button:hover {
 }
 .receipt-card-bottom strong {
   letter-spacing: -0.8px;
-  font-family: Manrope, sans-serif;
+  font-family: var(--font-ui);
   font-weight: 600;
 }
 .receipt-items-link {
@@ -1179,7 +1176,7 @@ dialog::backdrop {
 }
 .detail-total > strong {
   letter-spacing: -1.4px;
-  font-family: Manrope, sans-serif;
+  font-family: var(--font-ui);
   font-weight: 600;
 }
 .detail-total > span,
