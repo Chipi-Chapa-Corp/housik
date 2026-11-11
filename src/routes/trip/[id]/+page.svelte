@@ -34,6 +34,9 @@
   import Toast from '#lib/Toast.svelte';
   import NameBubble from '#lib/NameBubble.svelte';
   import TagSelect from '#lib/TagSelect.svelte';
+  import AmountInput from '#lib/AmountInput.svelte';
+  import { cents } from '#lib/money.ts';
+  import { inputCurrency, toCzk } from '#lib/currency.ts';
   import type { Expense, Tag, Payment } from '#lib/types.ts';
   import { allocate } from '#lib/money.ts';
   import { departureDate } from '#lib/dates.ts';
@@ -46,6 +49,9 @@
     message = $state(''),
     notice = $state('');
   let expenseTags = $state<string[]>([]);
+  let expenseCurrency = $state('CZK'),
+    paymentCurrency = $state('CZK'),
+    choiceCurrency = $state('CZK');
   let pendingPayment = $state<Payment | null>(null);
   let editing = $state<Expense | null>(null),
     selected = $state<Expense | null>(null),
@@ -64,7 +70,7 @@
     id: string;
     merchant: string;
     currency: string;
-    items: { title: string; amount: string }[];
+    items: { title: string; amount: string; currency: string }[];
   } | null>(null);
   let memberUsername = $state('');
   let settingsArrival = $state('');
@@ -116,6 +122,7 @@
     expenseTags = [];
     kind = type;
     expenseAmount = '';
+    expenseCurrency = 'CZK';
     nightly = false;
     open('expense');
   }
@@ -124,6 +131,7 @@
     expenseTags = [...(e.tag_ids ?? (e.tag_id ? [e.tag_id] : []))];
     kind = e.kind;
     expenseAmount = (e.amount / 100).toFixed(2);
+    expenseCurrency = 'CZK';
     nightly = false;
     open('expense');
   }
@@ -134,12 +142,14 @@
   }
   function syncChoice(member: string, e = current) {
     const c = e?.choices.find((c) => c.member_id === member);
+    choiceCurrency = 'CZK';
     choiceMode = c?.mode || 'default';
     choiceExtra = c?.extra ? String(c.extra / 100) : '';
   }
   function recordPayment(from = '', amount = 0) {
     paymentFrom = from || data.members.find((m) => m.id !== data.session.member_id)?.id || '';
     paymentAmount = amount ? String(amount / 100) : '';
+    paymentCurrency = 'CZK';
     open('payment');
   }
   function newReceipt() {
@@ -178,14 +188,28 @@
         ...value,
         items: value.items.map((i: { title: string; amount: number }) => ({
           ...i,
-          amount: (i.amount / 100).toFixed(2)
+          amount: (i.amount / 100).toFixed(2),
+          currency: value.currency
         }))
       };
-      if (!draft!.items.length) draft!.items.push({ title: '', amount: '' });
+      if (!draft!.items.length)
+        draft!.items.push({ title: '', amount: '', currency: value.currency });
     } catch (e) {
       message = e instanceof Error ? e.message : 'Could not read receipt.';
     } finally {
       scanning = false;
+    }
+  }
+  function czkPreview(value: string, currency: string, nights = 1) {
+    try {
+      return toCzk(
+        cents(value || '0'),
+        inputCurrency(currency),
+        data.exchangeRate?.rate ?? null,
+        nights
+      );
+    } catch {
+      return 0;
     }
   }
   async function copyLink() {
@@ -599,32 +623,13 @@
     </div>
     <input type="hidden" name="kind" value={kind} />
     <label>Name<input name="title" value={editing?.title || ''} required maxlength="100" /></label>
-    <div class="form-grid">
-      <label
-        >{nightly ? 'Per night' : 'Amount'} · {data.trip.currency}<input
-          type="number"
-          min="0.01"
-          step="0.01"
-          max="10000000"
-          bind:value={expenseAmount}
-          required
-          inputmode="decimal"
-        /></label
-      ><label
-        >Paid by<select
-          name="payer"
-          value={editing?.payer_id || data.session.member_id || data.members[0].id}
-          >{#each data.members as m}<option value={m.id}>{m.name}</option>{/each}</select
-        ></label
-      >
-    </div>
-    <input
-      name="amount"
-      type="hidden"
-      value={nightly
-        ? ((Math.round(Number(expenseAmount) * 100) * data.trip.nights) / 100).toFixed(2)
-        : expenseAmount}
+    <AmountInput
+      bind:value={expenseAmount}
+      bind:currency={expenseCurrency}
+      label={nightly ? 'Per night' : 'Amount'}
+      rate={data.exchangeRate?.rate ?? null}
     />
+    <input type="hidden" name="nightly" value={String(nightly)} />
     {#if kind === 'rent'}<div class="rent-calculator">
         <label class="checkbox"
           ><input type="checkbox" bind:checked={nightly} /> Amount per night</label
@@ -632,13 +637,21 @@
           ><span>{data.trip.nights} nights</span><span class="rent-total"
             ><strong
               >{money(
-                Math.round(Number(expenseAmount || 0) * 100) * (nightly ? data.trip.nights : 1)
+                czkPreview(expenseAmount, expenseCurrency, nightly ? data.trip.nights : 1)
               )}</strong
             > total</span
           ></span
         >
       </div>{/if}
     <div class="form-grid">
+      <label
+        >Paid by<select
+          name="payer"
+          value={editing?.payer_id || data.session.member_id || data.members[0].id}
+        >
+          {#each data.members as m}<option value={m.id}>{m.name}</option>{/each}
+        </select></label
+      >
       <label>Date<input type="date" name="date" value={editing?.date || today} required /></label>
     </div>
     <TagSelect tags={data.tags} bind:selected={expenseTags} />
@@ -686,17 +699,15 @@
               >Cover the full cost</option
             ><option value="extra">Extra contribution</option></select
           ></label
-        >{#if choiceMode === 'extra'}<label
-            >Extra · {data.trip.currency}<input
-              type="number"
-              name="extra"
-              min="0.01"
-              max={current.amount / 100}
-              step="0.01"
-              bind:value={choiceExtra}
-              required
-            /></label
-          >{/if}
+        >{#if choiceMode === 'extra'}
+          <AmountInput
+            name="extra"
+            label="Extra"
+            bind:value={choiceExtra}
+            bind:currency={choiceCurrency}
+            rate={data.exchangeRate?.rate ?? null}
+          />
+        {/if}
       </div>
       {#if message}<p class="form-error" role="alert">{message}</p>{/if}<button
         class="btn primary full"
@@ -741,6 +752,11 @@
 >
 <Modal onClose={() => (modal = '')} open={modal === 'payment'} title="Confirm received"
   ><form method="POST" action="?/payment" use:enhance={submit} class="stack">
+    <AmountInput
+      bind:value={paymentAmount}
+      bind:currency={paymentCurrency}
+      rate={data.exchangeRate?.rate ?? null}
+    />
     <div class="form-grid">
       <label
         >From<select name="from" bind:value={paymentFrom}
@@ -758,17 +774,7 @@
       </div>
     </div>
     <div class="form-grid">
-      <label
-        >Amount · {data.trip.currency}<input
-          type="number"
-          name="amount"
-          min="0.01"
-          step="0.01"
-          max="10000000"
-          bind:value={paymentAmount}
-          required
-        /></label
-      ><label>Date<input type="date" name="date" value={today} required /></label>
+      <label>Date<input type="date" name="date" value={today} required /></label>
     </div>
     <label>Note<input name="note" maxlength="200" /></label>
     {#if message}<p class="form-error" role="alert">{message}</p>{/if}<button
@@ -935,37 +941,32 @@
     </div>
   {:else}<form method="POST" action="?/importReceipt" use:enhance={submit} class="stack">
       <input type="hidden" name="draft" value={draft.id} />
-      <div class="form-grid">
-        <label
-          >Receipt name<input
-            name="merchant"
-            bind:value={draft.merchant}
-            maxlength="80"
-            required
-          /></label
-        ><label
-          >Amounts in<select name="currency" bind:value={draft.currency}
-            >{#if draft.currency !== data.trip.currency}<option value={draft.currency}
-                >{draft.currency}</option
-              >{/if}<option value={data.trip.currency}>{data.trip.currency}</option></select
-          ></label
-        >
-      </div>
-      {#if draft.currency !== data.trip.currency}<p class="form-error">
-          Convert amounts to {data.trip.currency}, then select that currency.
-        </p>{/if}<label>Date<input type="date" name="date" value={today} required /></label>
+      <label
+        >Receipt name<input
+          name="merchant"
+          bind:value={draft.merchant}
+          maxlength="80"
+          required
+        /></label
+      >
+      {#if draft.items.some((item) => !['EUR', 'CZK'].includes(item.currency))}
+        <p class="form-error">Receipt uses {draft.currency}. Enter EUR or CZK amounts.</p>
+      {/if}
+      <label>Date<input type="date" name="date" value={today} required /></label>
       <div class="review-items">
         <div class="review-labels"><span>ITEM</span><span>AMOUNT</span><span></span></div>
         {#each draft.items as item, i}<div class="review-item">
-            <input aria-label="Item name" bind:value={item.title} required maxlength="100" /><input
-              aria-label="Item amount"
-              type="number"
-              min="0.01"
-              step="0.01"
-              max="10000000"
+            <input aria-label="Item name" bind:value={item.title} required maxlength="100" />
+            <AmountInput
+              name={null}
+              currencyName={null}
+              compact
+              label="Item amount"
               bind:value={item.amount}
-              required
-            /><button
+              bind:currency={item.currency}
+              rate={data.exchangeRate?.rate ?? null}
+            />
+            <button
               class="icon-btn"
               type="button"
               aria-label="Remove item"
@@ -978,11 +979,15 @@
         <button
           type="button"
           class="text-btn"
-          onclick={() => draft!.items.push({ title: '', amount: '' })}
-          ><Plus size={14} />Add item</button
+          onclick={() =>
+            draft!.items.push({
+              title: '',
+              amount: '',
+              currency: ['EUR', 'CZK'].includes(draft!.currency) ? draft!.currency : 'CZK'
+            })}><Plus size={14} />Add item</button
         ><strong
           >Total {money(
-            draft.items.reduce((s, i) => s + Math.round(Number(i.amount || 0) * 100), 0)
+            draft.items.reduce((sum, item) => sum + czkPreview(item.amount, item.currency), 0)
           )}</strong
         >
       </div>
@@ -1003,8 +1008,9 @@
           rel="noreferrer">View original <ArrowUpRight size={14} /></a
         ><button
           class="btn primary"
-          disabled={busy || draft.currency !== data.trip.currency || !draft.items.length}
-          >Add {draft.items.length} items <Check size={16} /></button
+          disabled={busy ||
+            draft.items.some((item) => !['EUR', 'CZK'].includes(item.currency)) ||
+            !draft.items.length}>Add {draft.items.length} items <Check size={16} /></button
         >
       </div>
     </form>{/if}

@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import * as env from '$app/env/private';
 import { db, id, today, tripData } from './db';
-import { cents } from '#lib/money.ts';
+import { convertInput } from './exchange-rates';
 import type { ReceiptItem } from '#lib/types.ts';
 
 db.exec(`CREATE TABLE IF NOT EXISTS receipt_drafts (
@@ -157,20 +157,24 @@ export async function commitReceipt(tripId: string, form: FormData) {
     .trim()
     .slice(0, 80);
   if (!merchant) throw new Error('Add a receipt name.');
-  const currency = String(form.get('currency'));
+  const currency = String(form.get('currency') || 'CZK');
   const d = tripData(tripId);
-  if (currency !== d.trip.currency)
-    throw new Error(`Enter converted amounts in ${d.trip.currency} before importing.`);
-  const raw = JSON.parse(String(form.get('items') || '[]')) as { title: string; amount: unknown }[];
+  const raw = JSON.parse(String(form.get('items') || '[]')) as {
+    title: string;
+    amount: unknown;
+    currency?: unknown;
+  }[];
   if (!Array.isArray(raw) || !raw.length || raw.length > 200) throw new Error('Add 1–200 items.');
-  const items = raw.map((item) => {
-    const title = String(item.title || '')
-        .trim()
-        .slice(0, 100),
-      amount = cents(item.amount);
-    if (!title || amount <= 0) throw new Error('Each item needs a name and positive amount.');
-    return { title, amount };
-  });
+  const items = await Promise.all(
+    raw.map(async (item) => {
+      const title = String(item.title || '')
+          .trim()
+          .slice(0, 100),
+        amount = await convertInput(item.amount, item.currency ?? currency);
+      if (!title || amount <= 0) throw new Error('Each item needs a name and positive amount.');
+      return { title, amount };
+    })
+  );
   const members = [...new Set(form.getAll('members').map(String))];
   if (!members.length || members.some((m) => !d.members.some((x) => x.id === m)))
     throw new Error('Choose at least one payer.');

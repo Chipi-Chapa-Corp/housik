@@ -100,8 +100,8 @@ Open the URL printed by Vite. Enter a name (up to 20 characters) and password; a
 - Trip owners manage people, rent, purchases, receipt imports and tags. Only a payment’s receiver can confirm or undo it, including when the sender is the trip owner.
 - Invited people can read the trip and change **only their own** expense participation: default, include, exclude, cover fully, or contribute extra. They cannot edit other people or confirm payments to another person.
 - Trips use arrival and departure dates; nights are calculated automatically. Rent can be entered as a total or a nightly rate × the calculated nights. Trip settings accept an HTTP(S) location link; the house/place name becomes clickable.
-- Separate extra expenses cover fuel, car costs, benefit credits, and other contributions. Their value is entered in the trip currency and credited to the person who paid.
-- Receipt photos/PDFs are stored privately. Scanning extracts line items using OpenAI's Responses API and structured outputs. Review/edit every item before importing it atomically. Each receipt creates a group with its own default payers and adds its items to the purchase list. Manual receipt entry works without an API key.
+- Separate extra expenses cover fuel, car costs, benefit credits, and other contributions. Their value can be entered in EUR or CZK and is credited in CZK to the person who paid.
+- Receipt photos/PDFs are stored privately. Scanning extracts line items using OpenAI's Responses API and structured outputs. Review/edit every item before importing it atomically; EUR items are converted automatically, and other currencies require manual review. Each receipt creates a group with its own default payers and adds its items to the purchase list. Manual receipt entry works without an API key.
 - Per-person shares, expenses paid, transfers sent/received, overpayments, and live remaining balances.
 - A settlement plan, paid/unpaid tracking, partial payments, undo, and CSV export.
 - Responsive layouts, keyboard-accessible dialogs, and an optional sample trip created from the trips page.
@@ -120,6 +120,10 @@ Icons are PNG exports of `static/favicon.svg`, with an opaque square background;
 
 ## Currency and interface
 
+Amounts can be entered in CZK or EUR using the toggle beside each amount. Expenses, payments, extra contributions and receipt items are converted on the server and stored in CZK; totals, balances and exports always use CZK. Editing a saved amount starts in CZK, so it is not converted twice.
+
+The app fetches the latest EUR/CZK reference rate from [Frankfurter](https://frankfurter.dev/) on startup and refreshes it every 15 minutes. The SQLite `exchange_rates` row stores the rate in millionths (1 EUR in CZK), its source date and refresh timestamps. The refresh window survives restarts and concurrent requests share a refresh. If the API is unavailable, the last successful rate is used; with no saved rate, CZK entry still works and EUR entry returns an error. Saved amounts never change when the rate updates. EUR previews are approximate; the server uses the current saved rate at submission and rounds once to halers, after any nightly multiplication. Frankfurter publishes reference rates, typically daily, rather than live trading quotes.
+
 All trips use CZK. The initial placeholder EUR entries are relabeled as CZK without changing their amounts, as requested. UI text uses 1rem throughout. The personal summary shows the signed-in member’s signed remaining balance (+ receive / − pay); the Settle card opens settlements. Expenses show plain full expense totals. People cards show the signed balance calculation: purchases paid + transfers sent − share − received. Transfers settle the trip balance and are not assigned to individual expense lines. Confirmed payments use green + amounts and require confirmation before undo.
 
 ## Split rules
@@ -132,7 +136,7 @@ Balances include both original expense payments and recorded person-to-person pa
 
 ## Receipt scanning
 
-Set `OPENAI_API_KEY` in `.env`. `OPENAI_MODEL` defaults to `gpt-4.1-mini`; use a vision model supporting structured outputs and PDF input. JPG, PNG, WebP and PDF are supported up to 10 MB. Receipt content is sent to OpenAI when scanning is configured; without a key, uploading opens manual review automatically. Requests set `store: false`. No provider key reaches the browser. Review is mandatory, and currency mismatches require manually converted CZK amounts before import. No live provider call is made by the automated tests.
+Set `OPENAI_API_KEY` in `.env`. `OPENAI_MODEL` defaults to `gpt-4.1-mini`; use a vision model supporting structured outputs and PDF input. JPG, PNG, WebP and PDF are supported up to 10 MB. Receipt content is sent to OpenAI when scanning is configured; without a key, uploading opens manual review automatically. Requests set `store: false`. No provider key reaches the browser. Review is mandatory, and EUR items convert automatically on import; other currencies require manually reviewed EUR or CZK amounts. Automated tests use a local exchange-rate fixture and make no live provider calls.
 
 ## Storage and sessions
 

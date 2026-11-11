@@ -3,15 +3,23 @@ import type { Actions, PageServerLoad } from './$types';
 import { db, id, tripData } from '#lib/server/db.ts';
 import { tripNights } from '#lib/dates.ts';
 import { requireSession, logout, text, validDate, locationUrl } from '#lib/server/auth.ts';
-import { allocate, balances, cents, settle } from '#lib/money.ts';
+import { allocate, balances, settle } from '#lib/money.ts';
 import * as env from '$app/env/private';
 import { commitReceipt } from '#lib/server/receipts.ts';
+import { convertInput, exchangeRates } from '#lib/server/exchange-rates.ts';
 
-export const load: PageServerLoad = (event) => {
+export const load: PageServerLoad = async (event) => {
   const session = requireSession(event);
   const data = tripData(session.trip_id);
   const ledger = balances(data.members, data.expenses, data.tags, data.payments);
-  return { ...data, session, ledger, settlement: settle(ledger), scanning: !!env.OPENAI_API_KEY };
+  return {
+    ...data,
+    session,
+    ledger,
+    settlement: settle(ledger),
+    scanning: !!env.OPENAI_API_KEY,
+    exchangeRate: await exchangeRates.refresh()
+  };
 };
 function wrap(
   fn: (event: Parameters<Actions[string]>[0], f: FormData) => unknown | Promise<unknown>
@@ -62,14 +70,16 @@ export const actions: Actions = {
       count % 6
     );
   }),
-  expense: wrap((event, f) => {
+  expense: wrap(async (event, f) => {
     const s = requireSession(event, true),
       expenseId = String(f.get('id') || '') || id();
     const title = text(f, 'title'),
       payer = text(f, 'payer'),
       kind = text(f, 'kind'),
       date = validDate(text(f, 'date'));
-    let amount = cents(f.get('amount'));
+    const nights =
+      kind === 'rent' && f.get('nightly') === 'true' ? tripData(s.trip_id).trip.nights : 1;
+    const amount = await convertInput(f.get('amount'), f.get('currency') ?? 'CZK', nights);
     if (!amount) throw new Error('Amount must be greater than zero.');
     if (!['rent', 'product', 'other'].includes(kind)) throw new Error('Choose an expense type.');
     memberExists(s.trip_id, payer);
@@ -121,7 +131,7 @@ export const actions: Actions = {
     const s = requireSession(event, true);
     db.prepare('DELETE FROM expenses WHERE id=? AND trip_id=?').run(text(f, 'id'), s.trip_id);
   }),
-  choice: wrap((event, f) => {
+  choice: wrap(async (event, f) => {
     const s = requireSession(event),
       expenseId = text(f, 'expense'),
       member = s.member_id!;
@@ -131,7 +141,8 @@ export const actions: Actions = {
       throw new Error('Choose how to split.');
     if (!db.prepare('SELECT 1 FROM expenses WHERE id=? AND trip_id=?').get(expenseId, s.trip_id))
       throw new Error('Expense not found.');
-    const extra = mode === 'extra' ? cents(f.get('extra')) : 0;
+    const extra =
+      mode === 'extra' ? await convertInput(f.get('extra'), f.get('currency') ?? 'CZK') : 0;
     if (mode === 'extra' && extra <= 0) throw new Error('Enter a positive extra contribution.');
     db.transaction(() => {
       db.prepare('DELETE FROM choices WHERE expense_id=? AND member_id=?').run(expenseId, member);
@@ -172,14 +183,14 @@ export const actions: Actions = {
       assertAllocations(s.trip_id);
     })();
   }),
-  payment: wrap((event, f) => {
+  payment: wrap(async (event, f) => {
     const s = requireSession(event),
       from = text(f, 'from'),
-      to = text(f, 'to'),
-      amount = cents(f.get('amount'));
+      to = text(f, 'to');
     if (!s.member_id || to !== s.member_id) error(403, 'Only the receiver can confirm a payment.');
     memberExists(s.trip_id, from);
     memberExists(s.trip_id, to);
+    const amount = await convertInput(f.get('amount'), f.get('currency') ?? 'CZK');
     if (from === to || amount <= 0) throw new Error('Choose a sender and a positive amount.');
     db.prepare('INSERT INTO payments VALUES(?,?,?,?,?,?,?)').run(
       id(),

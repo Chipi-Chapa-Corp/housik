@@ -10,15 +10,16 @@ services:
     init: true
     restart: unless-stopped
     ports:
-      - "127.0.0.1:4827:3000"
+      - '127.0.0.1:4827:3000'
     environment:
       # Tailscale Funnel supplies the external HTTPS origin and visitor IP.
       PROTOCOL_HEADER: x-forwarded-proto
       HOST_HEADER: x-forwarded-host
       ADDRESS_HEADER: x-forwarded-for
-      XFF_DEPTH: "1"
+      XFF_DEPTH: '1'
       OPENAI_API_KEY: '${OPENAI_API_KEY:-}'
       OPENAI_MODEL: '${OPENAI_MODEL:-gpt-4.1-mini}'
+      EXCHANGE_RATE_URL: '${EXCHANGE_RATE_URL:-}'
     healthcheck:
       test:
         - CMD

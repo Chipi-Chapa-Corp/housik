@@ -14,7 +14,7 @@ export default defineConfig({
     screenshot: 'only-on-failure'
   },
   webServer: {
-    command: 'npm run dev -- --port 5180 --strictPort',
+    command: 'node tests/browser/server.mjs',
     url: 'http://127.0.0.1:5180',
     reuseExistingServer: !!process.env.E2E_EXTERNAL_SERVER,
     env: {

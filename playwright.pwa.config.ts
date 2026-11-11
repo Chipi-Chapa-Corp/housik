@@ -7,7 +7,7 @@ export default defineConfig({
   testIgnore: [],
   webServer: {
     ...config.webServer,
-    command: 'npm run build && npm run preview -- --port 5180 --strictPort',
+    command: 'node tests/browser/server.mjs --production',
     reuseExistingServer: false,
     timeout: 120000
   }
