@@ -4,6 +4,7 @@ import { chmodSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { checkWritableDirectory } from './storage';
+import { migrateReceiptNames } from './receipt-names';
 import type { Expense, Member, Tag, Payment } from '#lib/types.ts';
 
 const path = resolve(env.DATABASE_PATH || './data/housik.sqlite');
@@ -79,22 +80,10 @@ if (
 ) {
   db.exec("ALTER TABLE trips ADD COLUMN location_url TEXT NOT NULL DEFAULT ''");
 }
-// Initial entries were placeholders; the app now uses CZK throughout.
+// Normalize currencies from older databases.
 if ((db.pragma('user_version', { simple: true }) as number) < 2) {
   db.transaction(() => {
     db.prepare("UPDATE trips SET currency='CZK'").run();
-    const samples = db
-      .prepare("SELECT id,name FROM trips WHERE name LIKE 'A little escape · %'")
-      .all() as { id: string; name: string }[];
-    for (const trip of samples) {
-      if (!/^A little escape · [0-9a-f]{6,8}$/.test(trip.name)) continue;
-      let name = 'Sample trip',
-        n = 1;
-      while (db.prepare('SELECT 1 FROM trips WHERE name=? AND id!=?').get(name, trip.id))
-        name = `Sample trip ${++n}`;
-      db.prepare('UPDATE trips SET name=? WHERE id=?').run(name, trip.id);
-      db.prepare("UPDATE expenses SET note=REPLACE(note,'€','Kč ') WHERE trip_id=?").run(trip.id);
-    }
     db.pragma('user_version = 2');
   })();
 }
@@ -104,7 +93,8 @@ db.transaction(() => {
     expenses: {
       input_amount: 'INTEGER',
       input_currency: "TEXT NOT NULL DEFAULT 'CZK'",
-      input_nightly: 'INTEGER NOT NULL DEFAULT 0'
+      input_nightly: 'INTEGER NOT NULL DEFAULT 0',
+      share_explicit: 'INTEGER NOT NULL DEFAULT 0'
     },
     choices: { input_extra: 'INTEGER', input_currency: "TEXT NOT NULL DEFAULT 'CZK'" }
   })) {
@@ -115,6 +105,7 @@ db.transaction(() => {
     }
   }
 })();
+migrateReceiptNames(db);
 export const id = () => randomUUID();
 export const today = () => new Date().toISOString().slice(0, 10);
 export type Trip = {
@@ -156,10 +147,16 @@ export function tripData(tripId: string) {
       const rows = db
         .prepare('SELECT tag_id FROM expense_tags WHERE expense_id=? ORDER BY rowid')
         .all(e.id) as { tag_id: string }[];
-      return rows.length ? rows.map((row) => row.tag_id) : e.tag_id ? [e.tag_id] : [];
+      return rows.length
+        ? rows.map((row) => row.tag_id)
+        : !e.share_explicit && e.tag_id
+          ? [e.tag_id]
+          : [];
     })(),
     member_ids: (() => {
-      const rows = db.prepare('SELECT member_id FROM expense_members WHERE expense_id=? ORDER BY rowid').all(e.id) as { member_id: string }[];
+      const rows = db
+        .prepare('SELECT member_id FROM expense_members WHERE expense_id=? ORDER BY rowid')
+        .all(e.id) as { member_id: string }[];
       return rows.length ? rows.map((row) => row.member_id) : undefined;
     })(),
     choices: db

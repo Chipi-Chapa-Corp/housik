@@ -5,7 +5,7 @@ import { tripNights } from '#lib/dates.ts';
 import { requireSession, logout, text, validDate, locationUrl } from '#lib/server/auth.ts';
 import { allocate, balances, settle } from '#lib/money.ts';
 import * as env from '$app/env/private';
-import { commitReceipt, commitReceipts } from '#lib/server/receipts.ts';
+import { commitReceipt, commitReceipts, deleteReceipt } from '#lib/server/receipts.ts';
 import { amountInput, convertInput, exchangeRates } from '#lib/server/exchange-rates.ts';
 
 export const load: PageServerLoad = async (event) => {
@@ -92,10 +92,15 @@ export const actions: Actions = {
       if (!db.prepare('SELECT 1 FROM tags WHERE id=? AND trip_id=?').get(tagId, s.trip_id))
         throw new Error('Choose tags from this trip.');
     }
+    const explicit = f.get('share_explicit') === 'true';
     let memberIds: string[] | undefined;
     if (f.has('member_ids')) {
       const raw = JSON.parse(String(f.get('member_ids')));
-      if (!Array.isArray(raw) || !raw.length || raw.some((member) => typeof member !== 'string'))
+      if (
+        !Array.isArray(raw) ||
+        (!raw.length && !explicit) ||
+        raw.some((member) => typeof member !== 'string')
+      )
         throw new Error('Choose who shares this expense.');
       memberIds = [...new Set(raw as string[])];
       for (const member of memberIds) memberExists(s.trip_id, member);
@@ -144,6 +149,10 @@ export const actions: Actions = {
       db.prepare('DELETE FROM expense_tags WHERE expense_id=?').run(expenseId);
       for (const member of selected)
         db.prepare('INSERT INTO expense_tags VALUES(?,?)').run(expenseId, member);
+      db.prepare('UPDATE expenses SET share_explicit=? WHERE id=?').run(
+        Number(explicit),
+        expenseId
+      );
       if (memberIds) {
         db.prepare('DELETE FROM expense_members WHERE expense_id=?').run(expenseId);
         for (const member of memberIds)
@@ -155,6 +164,10 @@ export const actions: Actions = {
   deleteExpense: wrap((event, f) => {
     const s = requireSession(event);
     db.prepare('DELETE FROM expenses WHERE id=? AND trip_id=?').run(text(f, 'id'), s.trip_id);
+  }),
+  deleteReceipt: wrap(async (event, f) => {
+    const s = requireSession(event);
+    await deleteReceipt(s.trip_id, text(f, 'id'));
   }),
   choice: wrap(async (event, f) => {
     const s = requireSession(event),

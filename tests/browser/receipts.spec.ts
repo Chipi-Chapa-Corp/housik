@@ -1,3 +1,4 @@
+import { createFixtureTrip } from './fixtures';
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { readFileSync, statSync, existsSync } from 'node:fs';
@@ -19,12 +20,11 @@ async function login(page: Page, name: string) {
   await page.getByLabel('Name', { exact: true }).fill(name);
   await page.getByLabel('Password', { exact: true }).fill('receipt-test-password');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Sample trip', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'New trip', exact: true })).toBeVisible();
 }
 async function start(page: Page, name: string) {
   await login(page, name);
-  await page.getByRole('button', { name: 'Sample trip', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /^Sample trip/ })).toBeVisible();
+  await createFixtureTrip(page);
   const path = new URL(page.url()).pathname;
   await page.getByRole('button', { name: 'Receipts', exact: true }).first().click();
   await page.getByRole('button', { name: 'Add receipt', exact: true }).click();
@@ -116,6 +116,9 @@ test('batch previews, per-file scanning, manual failure review and atomic import
   const failed = dialog.locator('.receipt-review-card[data-status=failed]');
   await expect(dialog.getByText('Paid by', { exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('checkbox')).toHaveCount(0);
+  await expect(first.getByLabel('Item name', { exact: true })).toHaveCount(0);
+  await expect(first.locator('.receipt-item-open')).toContainText('Scanned coffee');
+  await first.getByRole('button', { name: 'Edit item', exact: true }).click();
   await expect(first.getByLabel('Item name', { exact: true })).toHaveValue('Scanned coffee');
   await expect(first.getByLabel('Item amount', { exact: true })).toHaveValue('1.25');
   await expect(first.getByRole('button', { name: 'EUR', exact: true })).toHaveAttribute(
@@ -350,6 +353,7 @@ test('receipt defaults, item overrides and undetected currency survive import', 
   const people = rows('SELECT id,name FROM members WHERE trip_id=? ORDER BY rowid', tripId);
   expect(people.length).toBeGreaterThan(1);
   const draft = rows('SELECT * FROM receipt_drafts WHERE trip_id=?', tripId)[0];
+  await card.getByRole('button', { name: 'Edit item', exact: true }).click();
   await expect(card.getByLabel('Item amount', { exact: true })).toHaveValue('1.25');
   await expect(card.getByRole('button', { name: 'CZK', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -358,7 +362,7 @@ test('receipt defaults, item overrides and undetected currency survive import', 
   await common.getByLabel('Date', { exact: true }).fill('2026-11-10');
   const first = card.locator('.receipt-product').first();
   await first.getByLabel('Item name', { exact: true }).fill('Individual item');
-  await first.getByRole('button', { name: 'Item settings', exact: true }).click();
+
   const settings = first.locator('.receipt-item-settings');
   await expect(settings.getByLabel('Date', { exact: true })).toHaveValue('2026-11-10');
   // Untouched item fields follow subsequent edits to the receipt.
@@ -373,7 +377,7 @@ test('receipt defaults, item overrides and undetected currency survive import', 
   await settings.getByLabel('Date', { exact: true }).fill('2026-11-08');
   for (const member of people.slice(1))
     await settings.getByRole('button', { name: `Remove ${member.name}`, exact: true }).click();
-  await first.getByRole('button', { name: 'Item settings', exact: true }).click();
+  await first.getByRole('button', { name: 'Done editing item', exact: true }).click();
   await card.getByRole('button', { name: 'Add item', exact: true }).click();
   const second = card.locator('.receipt-product').nth(1);
   await second.getByLabel('Item name', { exact: true }).fill('Shared item');
@@ -389,7 +393,7 @@ test('receipt defaults, item overrides and undetected currency survive import', 
   await sharedPeople.press('Escape');
   await common.getByRole('button', { name: `Remove ${people[0].name}`, exact: true }).click();
   await common.getByLabel('Date', { exact: true }).fill('2026-11-07');
-  await second.getByRole('button', { name: 'Item settings', exact: true }).click();
+
   await expect(second.getByLabel('Date', { exact: true })).toHaveValue('2026-11-07');
   await expect(second.locator('.member-chip')).toHaveCount(people.length - 1);
   for (const width of [320, 390, 768, 1440]) {
@@ -443,8 +447,15 @@ test('receipt defaults, item overrides and undetected currency survive import', 
   expect(rows('SELECT member_id FROM expense_members WHERE expense_id=?', expenses[0].id)).toEqual([
     { member_id: people[0].id }
   ]);
-  expect(rows('SELECT member_id FROM expense_members WHERE expense_id=?', expenses[1].id)).toEqual(
-    []
+  expect(
+    rows('SELECT member_id FROM expense_members WHERE expense_id=?', expenses[1].id)
+      .map((row) => row.member_id)
+      .sort()
+  ).toEqual(
+    people
+      .slice(1)
+      .map((person) => person.id)
+      .sort()
   );
   expect(
     rows('SELECT member_id FROM tag_members WHERE tag_id=?', expenses[1].tag_id)
@@ -643,4 +654,387 @@ test('five receipt scans run in parallel and the total includes every receipt', 
     /Add 6 items for 187,50\sKč/
   );
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+});
+
+test('receipt cards, expense previews and modal padding use the simplified presentation', async ({
+  page
+}) => {
+  const tripPath = await start(page, 'Receipt display');
+  const tripId = tripPath.split('/').at(-1)!;
+  const dialog = page.locator('dialog[open]');
+  await dialog
+    .locator('input[type=file]')
+    .setInputFiles(await receiptImage(page, 'long-original-filename'));
+  await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'Review receipt', exact: true })).toBeVisible();
+  await expect(dialog.getByLabel('Receipt name')).toHaveCount(0);
+  await expect(dialog.locator('.receipt-product').getByRole('textbox')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Edit item', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Remove item', exact: true })).toBeVisible();
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 1050 });
+    const layout = await dialog.evaluate((el) => ({
+      fits: el.scrollWidth <= el.clientWidth,
+      badge: el.querySelector('.receipt-summary-total')!.getBoundingClientRect().width,
+      preview: el.querySelector('.receipt-preview')!.getBoundingClientRect().width
+    }));
+    expect(layout.fits).toBe(true);
+    expect(layout.badge).toBeLessThan(layout.preview * 0.6);
+    await page.screenshot({
+      path: `.test-data/receipt-work/compact-review-${width}.png`,
+      fullPage: true
+    });
+  }
+
+  await dialog.getByRole('button', { name: /^Add 1 item for/ }).click();
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  const receipt = rows('SELECT * FROM receipts WHERE trip_id=?', tripId)[0];
+  const uploader = rows('SELECT username FROM members WHERE id=?', receipt.uploader_id)[0];
+  expect(receipt.merchant).toBe(`${uploader.username} 1`);
+  expect(receipt.sequence).toBe(1);
+  expect(
+    rows('SELECT name FROM tags WHERE trip_id=? AND name=?', tripId, receipt.merchant)
+  ).toHaveLength(1);
+  const card = page.locator('.receipt-card');
+  await expect(card.locator('h3')).toHaveCount(0);
+  await expect(card).not.toContainText('long-original-filename');
+  await expect(card.locator('.receipt-summary-total')).toHaveText(/^31,25/);
+  await expect(card.locator('.receipt-card-bottom')).not.toContainText('31,25');
+  const presentation = await card.evaluate((el) => {
+    const preview = getComputedStyle(el.querySelector('.receipt-preview')!);
+    const badges = [...el.querySelectorAll('.receipt-card-summary > *')].map((badge) =>
+      getComputedStyle(badge)
+    );
+    return {
+      previewCorners: [preview.borderBottomLeftRadius, preview.borderBottomRightRadius],
+      topCorners: badges.flatMap((badge) => [
+        badge.borderTopLeftRadius,
+        badge.borderTopRightRadius
+      ]),
+      backgrounds: [preview.backgroundColor, ...badges.map((badge) => badge.backgroundColor)]
+    };
+  });
+  expect(presentation.previewCorners).toEqual(['0px', '0px']);
+  expect(new Set(presentation.topCorners)).toEqual(new Set(['0px']));
+  expect(new Set(presentation.backgrounds).size).toBe(1);
+  await page.screenshot({
+    path: '.test-data/receipt-work/receipt-card-desktop.png',
+    fullPage: true
+  });
+  await page.setViewportSize({ width: 390, height: 1050 });
+  await page.screenshot({
+    path: '.test-data/receipt-work/receipt-card-mobile.png',
+    fullPage: true
+  });
+  await card.getByRole('button', { name: 'View items', exact: true }).click();
+  await expect(dialog.locator('.receipt-detail-item')).toHaveCount(1);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Expenses', exact: true }).first().click();
+  const row = page.locator('.expense-row').filter({ hasText: 'Scanned coffee' });
+  await expect(row).toHaveCount(1);
+  await expect(row.locator('.with-receipt')).toHaveText('With receipt');
+  await expect(row.locator('.expense-meta')).not.toContainText(receipt.merchant);
+  await row.locator('.with-receipt').click();
+  await expect(dialog.locator('.expense-receipt-preview')).toBeVisible();
+  await dialog.click({ position: { x: 10, y: 70 } });
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByRole('button', { name: `Enlarge receipt ${receipt.merchant}`, exact: true })
+    .click();
+  const viewer = page.locator('dialog[open]').last();
+  await expect(page.locator('dialog[open]')).toHaveCount(2);
+  await viewer.click({ position: { x: 10, y: 70 } });
+  await expect(viewer).toBeVisible();
+  await viewer.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.locator('dialog[open]')).toHaveCount(1);
+  await page.screenshot({
+    path: '.test-data/receipt-work/expense-receipt-preview.png',
+    fullPage: true
+  });
+  await page.mouse.click(4, 4);
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+});
+
+test('group receipts, edit through the shared popup, and confirm deletion as a trip member', async ({
+  page,
+  browser
+}) => {
+  const tripPath = await start(page, 'Grouping owner');
+  const tripId = tripPath.split('/').at(-1)!;
+  const baselineExpenses = rows('SELECT id,title FROM expenses WHERE trip_id=?', tripId);
+  const dialog = page.locator('dialog[open]');
+  await dialog.locator('input[type=file]').setInputFiles(await receiptImage(page, 'grouped'));
+  await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'Review receipt', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Add item', exact: true }).click();
+  const added = dialog.locator('.receipt-product').last();
+  await added.getByLabel('Item name', { exact: true }).fill('Receipt bread');
+  await added.getByLabel('Item amount', { exact: true }).fill('2');
+  await added.getByRole('button', { name: 'CZK', exact: true }).click();
+  await dialog.getByRole('button', { name: /^Add 2 items for/ }).click();
+  await expect(dialog).toHaveCount(0);
+  const receipt = rows('SELECT * FROM receipts WHERE trip_id=?', tripId)[0];
+  const items = rows('SELECT * FROM expenses WHERE receipt_id=? ORDER BY rowid', receipt.id);
+  const owner = rows('SELECT * FROM members WHERE id=?', receipt.uploader_id)[0];
+  expect(
+    (
+      await page.request.post(`${tripPath}?/expense`, {
+        form: {
+          title: 'Separate expense',
+          amount: '5',
+          payer: owner.id,
+          kind: 'other',
+          date: '2026-11-11'
+        }
+      })
+    ).ok()
+  ).toBe(true);
+  expect(
+    (
+      await page.request.post(`${tripPath}?/choice`, {
+        form: {
+          expense: items[0].id,
+          mode: 'extra',
+          extra: '1',
+          currency: 'CZK'
+        }
+      })
+    ).ok()
+  ).toBe(true);
+  await page.reload();
+  await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await expect(page.locator('.expense-row')).toHaveCount(baselineExpenses.length + 3);
+  const toggle = page.getByRole('checkbox', { name: 'Group receipts', exact: true });
+  await toggle.check();
+  await expect(page.locator('.expense-row')).toHaveCount(baselineExpenses.length + 2);
+  const grouped = page.locator('.expense-row').filter({ hasText: `${owner.name}: 2 items` });
+  await expect(grouped.locator('.expense-total')).toHaveText(/^33,25/);
+  await expect(page.locator('.expense-row').filter({ hasText: 'Separate expense' })).toHaveCount(1);
+  // A matching product finds its whole receipt, including all its items and total.
+  await page.getByLabel('Search expenses', { exact: true }).fill('Receipt bread');
+  await expect(page.locator('.expense-row')).toHaveCount(1);
+  await expect(grouped.locator('.expense-total')).toHaveText(/^33,25/);
+  await page.getByLabel('Search expenses', { exact: true }).fill('');
+  await page.screenshot({
+    path: '.test-data/receipt-work/grouped-expenses-desktop.png',
+    fullPage: true
+  });
+  await grouped.click();
+  await expect(
+    dialog.getByRole('heading', { name: `${owner.name}: 2 items`, exact: true })
+  ).toBeVisible();
+  await expect(dialog.locator('.receipt-detail-item')).toHaveCount(2);
+  await dialog.getByRole('button', { name: 'Edit Receipt bread', exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'Edit expense', exact: true })).toBeVisible();
+  await dialog.getByLabel('Name', { exact: true }).fill('Updated bread');
+  await dialog.getByLabel('Amount · CZK', { exact: true }).fill('3');
+  await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    dialog.getByRole('heading', { name: `${owner.name}: 2 items`, exact: true })
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole('button', { name: 'Edit Updated bread', exact: true })
+  ).toBeVisible();
+  await expect(dialog.locator('.receipt-summary-total')).toHaveText(/^34,25/);
+  await dialog.locator('.receipt-item-open').filter({ hasText: 'Updated bread' }).click();
+  await expect(dialog.getByRole('heading', { name: 'Updated bread', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(
+    dialog.getByRole('heading', { name: `${owner.name}: 2 items`, exact: true })
+  ).toBeVisible();
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 1050 });
+    expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(
+      await dialog.evaluate(
+        (el) =>
+          el.querySelector('.receipt-summary-total')!.getBoundingClientRect().width <
+          el.querySelector('.receipt-preview')!.getBoundingClientRect().width * 0.6
+      )
+    ).toBe(true);
+    await expect(dialog.locator('.receipt-detail-item form button')).toHaveCount(2);
+    await page.screenshot({
+      path: `.test-data/receipt-work/receipt-popup-${width}.png`,
+      fullPage: true
+    });
+  }
+  await dialog.getByRole('button', { name: 'Delete Updated bread', exact: true }).click();
+  await expect(
+    dialog.getByRole('heading', { name: `${owner.name}: 1 items`, exact: true })
+  ).toBeVisible();
+  await expect(dialog.locator('.receipt-detail-item')).toHaveCount(1);
+  await expect(dialog.locator('.receipt-summary-total')).toHaveText(/^31,25/);
+  await expect(grouped).toHaveCount(0);
+  expect(rows('SELECT id FROM expenses WHERE receipt_id=?', receipt.id)).toHaveLength(1);
+  await dialog
+    .getByRole('button', { name: `Delete receipt ${receipt.merchant}`, exact: true })
+    .click();
+  await expect(
+    dialog.getByText('Delete this receipt and its 1 item?', { exact: true })
+  ).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog.locator('.receipt-detail-item')).toHaveCount(1);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await toggle.uncheck();
+  await expect(page.locator('.expense-row')).toHaveCount(baselineExpenses.length + 2);
+  await page.getByRole('button', { name: 'Receipts', exact: true }).first().click();
+  const card = page.locator('.receipt-card');
+  await card.getByRole('button', { name: `Open receipt ${receipt.merchant}`, exact: true }).click();
+  await expect(dialog.locator('.receipt-detail-item')).toHaveCount(1);
+  await expect(
+    dialog.getByRole('button', { name: 'Edit Scanned coffee', exact: true })
+  ).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await card
+    .getByRole('button', { name: `Delete receipt ${receipt.merchant}`, exact: true })
+    .click();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(card).toHaveCount(1);
+  expect(existsSync(join(directory(), 'receipts', receipt.id))).toBe(true);
+
+  const guestContext = await browser.newContext();
+  try {
+    const guest = await guestContext.newPage();
+    await login(guest, 'Grouping guest');
+    expect(
+      (
+        await guest.request.post(`${tripPath}?/deleteReceipt`, { form: { id: receipt.id } })
+      ).status()
+    ).toBe(403);
+    await createFixtureTrip(guest);
+    const otherTrip = new URL(guest.url()).pathname;
+    expect(
+      (
+        await guest.request.post(`${otherTrip}?/deleteReceipt`, { form: { id: receipt.id } })
+      ).status()
+    ).toBe(400);
+    expect(rows('SELECT id FROM receipts WHERE id=?', receipt.id)).toHaveLength(1);
+    expect(existsSync(join(directory(), 'receipts', receipt.id))).toBe(true);
+    await page.request.post(`${tripPath}?/member`, { form: { name: 'Grouping guest' } });
+    await guest.goto(tripPath);
+    await expect(guest.locator('html[data-hydrated=true]')).toHaveCount(1);
+    await guest.getByRole('button', { name: 'Receipts', exact: true }).first().click();
+    const guestCard = guest.locator('.receipt-card');
+    await guestCard
+      .getByRole('button', { name: `Delete receipt ${receipt.merchant}`, exact: true })
+      .click();
+    await guest
+      .locator('dialog[open]')
+      .getByRole('button', { name: 'Delete receipt', exact: true })
+      .click();
+    await expect(guest.locator('dialog[open]')).toHaveCount(0);
+    await expect(guestCard).toHaveCount(0);
+    expect(rows('SELECT id FROM receipts WHERE id=?', receipt.id)).toHaveLength(0);
+    expect(rows('SELECT id FROM expenses WHERE receipt_id=?', receipt.id)).toHaveLength(0);
+    for (const item of items) {
+      expect(rows('SELECT * FROM choices WHERE expense_id=?', item.id)).toHaveLength(0);
+      expect(rows('SELECT * FROM expense_tags WHERE expense_id=?', item.id)).toHaveLength(0);
+      expect(rows('SELECT * FROM expense_members WHERE expense_id=?', item.id)).toHaveLength(0);
+    }
+    expect(
+      rows('SELECT name FROM tags WHERE trip_id=? AND name=?', tripId, receipt.merchant)
+    ).toHaveLength(0);
+    const remaining = rows('SELECT id,title FROM expenses WHERE trip_id=?', tripId);
+    expect(remaining).toHaveLength(baselineExpenses.length + 1);
+    expect(remaining).toEqual(expect.arrayContaining(baselineExpenses));
+    expect(remaining.filter((item) => item.title === 'Separate expense')).toHaveLength(1);
+    expect(existsSync(join(directory(), 'receipts', receipt.id))).toBe(false);
+    expect((await guest.request.get(`${tripPath}/receipt/${receipt.id}`)).status()).toBe(404);
+  } finally {
+    await guestContext.close();
+  }
+});
+
+test('receipt Share with combines people and tags at receipt and item level and survives editing', async ({
+  page
+}) => {
+  const tripPath = await start(page, 'Receipt mixed share');
+  const tripId = tripPath.split('/').at(-1)!;
+  const dialog = page.locator('dialog[open]');
+  await dialog.locator('input[type=file]').setInputFiles(await receiptImage(page, 'unknown'));
+  await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'Review receipt', exact: true })).toBeVisible();
+  const card = dialog.locator('.receipt-review-card');
+  const common = card.locator(':scope > .receipt-defaults');
+  const people = rows('SELECT id,name FROM members WHERE trip_id=? ORDER BY rowid', tripId);
+  const groceries = rows('SELECT id FROM tags WHERE trip_id=? AND name=?', tripId, 'Groceries')[0];
+  const jamie = people.find((person) => person.name === 'Jamie')!;
+  for (const person of people)
+    await common.getByRole('button', { name: `Remove ${person.name}`, exact: true }).click();
+  const chooser = common.getByRole('combobox', { name: 'Share with', exact: true });
+  await chooser.focus();
+  await expect(common.getByRole('option', { name: 'Groceries', exact: true })).toBeVisible();
+  const optionNames = await common.getByRole('option').allTextContents();
+  expect(optionNames.findIndex((name) => name.includes('Groceries'))).toBeLessThan(
+    optionNames.findIndex((name) => name.includes('Jamie'))
+  );
+  await page.screenshot({ path: '.test-data/receipt-options-tags-first.png', fullPage: true });
+  await chooser.fill('Groceries');
+  await chooser.press('ArrowDown');
+  await chooser.press('Enter');
+  await chooser.press('Escape');
+  await expect(
+    common.getByRole('button', { name: 'Remove tag Groceries', exact: true })
+  ).toBeVisible();
+  const item = card.locator('.receipt-product');
+  await item.getByRole('button', { name: 'Edit item', exact: true }).click();
+  const itemChooser = item.getByRole('combobox', { name: 'Share with', exact: true });
+  await itemChooser.fill('Jamie');
+  await itemChooser.press('ArrowDown');
+  await itemChooser.press('Enter');
+  await itemChooser.press('Escape');
+  await expect(
+    item.getByRole('button', { name: 'Remove tag Groceries', exact: true })
+  ).toBeVisible();
+  await expect(item.getByRole('button', { name: 'Remove Jamie', exact: true })).toBeVisible();
+  const draft = rows('SELECT id FROM receipt_drafts WHERE trip_id=?', tripId)[0];
+  expect(
+    (
+      await page.request.post(`${tripPath}?/importReceipts`, {
+        form: {
+          receipts: JSON.stringify([
+            {
+              draft: draft.id,
+              date: '2026-11-11',
+              members: [],
+              tag_ids: ['foreign-tag'],
+              items: [{ title: 'Invalid', amount: '1', currency: 'CZK' }]
+            }
+          ])
+        }
+      })
+    ).status()
+  ).toBe(400);
+  await dialog.getByRole('button', { name: /^Add 1 item for/ }).click();
+  await expect(dialog).toHaveCount(0);
+  const saved = rows('SELECT * FROM expenses WHERE receipt_id=?', draft.id)[0];
+  expect(saved.share_explicit).toBe(1);
+  expect(rows('SELECT member_id FROM expense_members WHERE expense_id=?', saved.id)).toEqual([
+    { member_id: jamie.id }
+  ]);
+  expect(rows('SELECT tag_id FROM expense_tags WHERE expense_id=?', saved.id)).toEqual([
+    { tag_id: groceries.id }
+  ]);
+  await page.getByRole('button', { name: 'Expenses', exact: true }).first().click();
+  const row = page.locator('.expense-row').filter({ hasText: 'Scanned coffee' });
+  await row.click();
+  for (const person of people)
+    await expect(
+      dialog.locator('.split-person').filter({ hasText: person.name }).locator('strong')
+    ).toHaveText(/^0,(31|32)/);
+  await dialog.getByRole('button', { name: 'Edit expense', exact: true }).click();
+  await expect(dialog.locator('.selected-people .name-bubble')).toHaveText('Jamie');
+  await expect(dialog.locator('.selected-people .tag-pill')).toHaveText('Groceries');
+  await dialog.getByRole('button', { name: 'Share with', exact: true }).click();
+  await dialog
+    .locator('.people-options.open')
+    .getByRole('checkbox', { name: 'Jamie', exact: true })
+    .uncheck();
+  await dialog.getByRole('button', { name: 'Share with', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await row.click();
+  for (const person of people)
+    await expect(
+      dialog.locator('.split-person').filter({ hasText: person.name }).locator('strong')
+    ).toHaveText(/^0,(31|32)/);
 });

@@ -24,6 +24,7 @@ export type Expense = {
   choices: Choice[];
   tag_ids?: string[];
   member_ids?: string[];
+  share_explicit?: number;
 };
 export type Payment = {
   id: string;

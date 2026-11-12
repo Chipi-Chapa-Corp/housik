@@ -10,12 +10,13 @@ export type ReceiptReviewItem = {
   currency?: string;
   date?: string;
   members?: string[];
+  tag_ids?: string[];
 };
 export type ReceiptReview = {
   draft: string;
-  merchant: string;
   date: string;
   members: string[];
+  tag_ids?: string[];
   kind?: Expense['kind'];
   items: ReceiptReviewItem[];
 };

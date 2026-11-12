@@ -1,3 +1,4 @@
+import { createFixtureTrip } from './fixtures';
 import { test, expect, type Page } from '@playwright/test';
 
 async function close(page: Page) {
@@ -10,8 +11,7 @@ test('EUR amounts stay editable in EUR while ledger totals use CZK', async ({ pa
   await page.getByLabel('Name', { exact: true }).fill('Currency tester');
   await page.getByLabel('Password', { exact: true }).fill('currency-test-password');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('button', { name: 'Sample trip', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /^Sample trip/ })).toBeVisible();
+  await createFixtureTrip(page, { purchase: true });
   const tripPath = new URL(page.url()).pathname;
 
   await page.getByRole('button', { name: 'Add expense', exact: true }).click();
@@ -66,7 +66,7 @@ test('EUR amounts stay editable in EUR while ledger totals use CZK', async ({ pa
   await expect(row.locator('.expense-total')).toHaveText(/^150,00/);
 
   // Legacy CZK entries still open with their saved amount.
-  await page.locator('.expense-row').filter({ hasText: 'Weekend groceries' }).click();
+  await page.locator('.expense-row').filter({ hasText: 'Shared purchase' }).click();
   await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
   dialog = page.locator('dialog[open]');
   await expect(dialog.getByLabel('Amount · CZK', { exact: true })).toHaveValue('86.40');
@@ -172,7 +172,6 @@ test('EUR amounts stay editable in EUR while ledger totals use CZK', async ({ pa
     )
   });
   await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
-  await dialog.getByLabel('Receipt name').fill('Mixed receipt');
   let item = dialog.locator('.receipt-product').first();
   await item.getByLabel('Item name', { exact: true }).fill('Euro item');
   await item.getByLabel('Item amount', { exact: true }).fill('1.25');
@@ -182,13 +181,11 @@ test('EUR amounts stay editable in EUR while ledger totals use CZK', async ({ pa
   await item.getByRole('button', { name: 'CZK', exact: true }).click();
   await item.getByLabel('Item name', { exact: true }).fill('Crown item');
   await item.getByLabel('Item amount', { exact: true }).fill('3.50');
-  await expect(dialog.locator('.receipt-subtotal strong')).toContainText('34,75');
+  await expect(dialog.locator('.receipt-summary-total')).toContainText('34,75');
   await page.screenshot({ path: 'test-results/currency-receipt-mobile.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await dialog.getByRole('button', { name: /^Add 2 items for/ }).click();
-  await expect(page.locator('.receipt-card').filter({ hasText: 'Mixed receipt' })).toContainText(
-    '34,75'
-  );
+  await expect(page.locator('.receipt-card')).toContainText('34,75');
   await page.getByRole('button', { name: 'Expenses', exact: true }).last().click();
   await expect(
     page.locator('.expense-row').filter({ hasText: 'Euro item' }).locator('.expense-total')

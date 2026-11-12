@@ -13,6 +13,17 @@ export function cents(value: unknown): number {
 }
 
 export function defaultMembers(expense: Expense, members: Member[], tags: Tag[]): string[] {
+  if (expense.share_explicit) {
+    const people = expense.member_ids ?? [];
+    const tagIds = expense.tag_ids ?? [];
+    if (!people.length && !tagIds.length) return members.map((member) => member.id);
+    return [
+      ...new Set([
+        ...people,
+        ...tags.filter((tag) => tagIds.includes(tag.id)).flatMap((tag) => tag.members)
+      ])
+    ];
+  }
   if (expense.member_ids?.length) return expense.member_ids;
   const ids = expense.tag_ids ?? (expense.tag_id ? [expense.tag_id] : []);
   if (!ids.length) return members.map((member) => member.id);

@@ -205,3 +205,57 @@ test('multiple volunteers each keep their normal share plus their exact extra', 
     )
   );
 });
+
+test('explicit people and selected tags form a union without double-counting', () => {
+  const mixed = expense({ share_explicit: 1, member_ids: ['b', 'c'], tag_ids: ['t'] });
+  assert.deepEqual(
+    [...allocate(mixed, members, [tag])],
+    [
+      ['a', 334],
+      ['b', 333],
+      ['c', 333]
+    ]
+  );
+  assert.deepEqual(
+    [...allocate({ ...mixed, member_ids: ['c'] }, members, [{ ...tag, members: ['b'] }])],
+    [
+      ['a', 0],
+      ['b', 500],
+      ['c', 500]
+    ]
+  );
+});
+test('explicit person-only and Everyone selections ignore the legacy receipt tag', () => {
+  assert.deepEqual(
+    [
+      ...allocate(
+        expense({ share_explicit: 1, member_ids: ['c'], tag_ids: [], tag_id: 't' }),
+        members,
+        [tag]
+      )
+    ],
+    [
+      ['a', 0],
+      ['b', 0],
+      ['c', 1000]
+    ]
+  );
+  assert.deepEqual(
+    [...allocate(expense({ share_explicit: 1, member_ids: [], tag_ids: [] }), members, [tag])],
+    [
+      ['a', 334],
+      ['b', 333],
+      ['c', 333]
+    ]
+  );
+});
+test('existing receipt member overrides retain their original shares', () => {
+  assert.deepEqual(
+    [...allocate(expense({ member_ids: ['c'], tag_ids: ['t'] }), members, [tag])],
+    [
+      ['a', 0],
+      ['b', 0],
+      ['c', 1000]
+    ]
+  );
+});

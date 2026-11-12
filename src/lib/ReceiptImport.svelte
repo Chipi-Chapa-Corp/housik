@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { enhance, type SubmitFunction } from '$app/forms';
-  import { Upload, X, Check, Plus, Menu, Trash2 } from '@lucide/svelte';
+  import { Upload, X, Check, Plus, Pencil, Trash2 } from '@lucide/svelte';
   import Modal from './Modal.svelte';
   import ReceiptPreview from './ReceiptPreview.svelte';
+  import ReceiptSummary from './ReceiptSummary.svelte';
   import ReceiptViewer from './ReceiptViewer.svelte';
   import AmountInput from './AmountInput.svelte';
   import PeopleSelect from './PeopleSelect.svelte';
@@ -14,7 +15,7 @@
     type ReceiptReviewItem,
     type ReceiptReview
   } from './receipts';
-  import type { Member, Expense } from './types';
+  import type { Member, Expense, Tag } from './types';
   import { cents } from './money';
   import { inputCurrency, toCzk } from './currency';
 
@@ -22,6 +23,7 @@
     open,
     tripId,
     members,
+    tags,
     rate,
     onClose,
     onSaved
@@ -29,6 +31,7 @@
     open: boolean;
     tripId: string;
     members: Member[];
+    tags: Tag[];
     rate: number | null;
     onClose: () => void;
     onSaved: () => void | Promise<void>;
@@ -41,10 +44,10 @@
     currency: string;
     status: 'ready' | 'processing' | 'succeeded' | 'failed';
     draft: string;
-    merchant: string;
     kind: Expense['kind'];
     date: string;
     members: string[];
+    tag_ids: string[];
     items: (ReceiptReviewItem & { currency: string; expanded?: boolean })[];
     error: string;
   };
@@ -75,6 +78,17 @@
       return toCzk(cents(item.amount || '0'), inputCurrency(item.currency), rate);
     } catch {
       return 0;
+    }
+  }
+  function itemPrice(item: ReceiptReviewItem) {
+    try {
+      return new Intl.NumberFormat('cs-CZ', {
+        style: 'currency',
+        currency: inputCurrency(item.currency),
+        minimumFractionDigits: 2
+      }).format(cents(item.amount || '0') / 100);
+    } catch {
+      return '—';
     }
   }
   function release() {
@@ -134,11 +148,11 @@
         currency: 'CZK',
         status: 'ready',
         draft: '',
-        merchant: file.name.replace(/\.[^.]+$/, '').slice(0, 80) || 'Receipt',
         kind: 'product',
         date: new Date().toISOString().slice(0, 10),
         members: members.map((member) => member.id),
-        items: [{ title: '', amount: '', currency: 'CZK' }],
+        tag_ids: [],
+        items: [{ title: '', amount: '', currency: 'CZK', expanded: true }],
         error: ''
       });
     }
@@ -198,7 +212,7 @@
                   amount: (item.amount / 100).toFixed(2),
                   currency: item.currency === 'EUR' ? 'EUR' : 'CZK'
                 }))
-              : [{ title: '', amount: '', currency: 'CZK' }];
+              : [{ title: '', amount: '', currency: 'CZK', expanded: true }];
           } catch (cause) {
             if (token !== generation) return;
             receipt.status = 'failed';
@@ -221,18 +235,19 @@
         }
       }
       const reviews: ReceiptReview[] = receipts.map(
-        ({ draft, merchant, kind, date, members, items }) => ({
+        ({ draft, kind, date, members, tag_ids, items }) => ({
           draft,
-          merchant,
           kind,
           date,
           members,
-          items: items.map(({ title, amount, currency, date, members }) => ({
+          tag_ids,
+          items: items.map(({ title, amount, currency, date, members, tag_ids }) => ({
             title,
             amount,
             currency,
             date,
-            members
+            members,
+            tag_ids
           }))
         })
       );
@@ -263,7 +278,7 @@
       : 'Review receipts'
     : 'Receipts'}
   onClose={close}
-  width={phase === 'review' ? '760px' : '1000px'}
+  width={phase === 'review' ? '620px' : '1000px'}
 >
   <div class="receipt-workspace">
     {#if phase !== 'review'}
@@ -338,6 +353,7 @@
               <div class="receipt-review-header">
                 <div class="receipt-thumbnail">
                   <ReceiptPreview
+                    joined
                     src={receipt.src}
                     mime={receipt.mime}
                     name={receipt.file.name}
@@ -349,26 +365,16 @@
                     class:failed={receipt.status === 'failed'}
                     role="img"
                     aria-label={receipt.status === 'succeeded' ? 'Scan succeeded' : 'Scan failed'}
-                    >{#if receipt.status === 'succeeded'}<Check size={19} />{:else}<X
-                        size={19}
-                      />{/if}</span
                   >
+                    {#if receipt.status === 'succeeded'}<Check size={19} />{:else}<X
+                        size={19}
+                      />{/if}
+                  </span>
+                  <ReceiptSummary
+                    total={money(receipt.items.reduce((sum, item) => sum + itemTotal(item), 0))}
+                    count={receipt.items.length}
+                  />
                 </div>
-                <label
-                  >Receipt name<input
-                    name="merchant"
-                    bind:value={receipt.merchant}
-                    maxlength="80"
-                    required
-                  /></label
-                >
-                <button
-                  class="icon-btn"
-                  type="button"
-                  aria-label={`Remove receipt ${receipt.file.name}`}
-                  disabled={busy}
-                  onclick={() => remove(receipt)}><Trash2 size={16} /></button
-                >
               </div>
               <div class="segmented receipt-type" role="group" aria-label="Receipt type">
                 {#each [['product', 'Groceries'], ['other', 'Extra'], ['rent', 'Rent']] as [value, label]}
@@ -384,6 +390,9 @@
                 <label>Date<input type="date" bind:value={receipt.date} required /></label>
                 <PeopleSelect
                   {members}
+                  {tags}
+                  selectedTags={receipt.tag_ids}
+                  onTagsChange={(ids) => (receipt.tag_ids = ids)}
                   selected={receipt.members}
                   onchange={(ids) => (receipt.members = ids)}
                 />
@@ -391,31 +400,27 @@
               {#if receipt.error}<p class="receipt-error">{receipt.error}</p>{/if}
               <div class="receipt-products">
                 {#each receipt.items as item, i}<div class="receipt-product">
-                    <input
-                      aria-label="Item name"
-                      bind:value={item.title}
-                      required
-                      maxlength="100"
-                    />
-                    <AmountInput
-                      name={null}
-                      currencyName={null}
-                      compact
-                      label="Item amount"
-                      bind:value={item.amount}
-                      bind:currency={item.currency}
-                      {rate}
-                    />
-                    <div class="receipt-item-actions">
+                    <div class="receipt-detail-item">
+                      <button
+                        type="button"
+                        class="receipt-item-open"
+                        onclick={() => (item.expanded = !item.expanded)}
+                      >
+                        <span>{item.title || 'New item'}</span><strong>{itemPrice(item)}</strong>
+                      </button>
                       <button
                         class="icon-btn"
-                        class:customized={item.date !== undefined || item.members !== undefined}
+                        class:customized={item.date !== undefined ||
+                          item.members !== undefined ||
+                          item.tag_ids !== undefined}
                         type="button"
-                        aria-label="Item settings"
+                        aria-label={item.expanded ? 'Done editing item' : 'Edit item'}
                         aria-expanded={!!item.expanded}
                         aria-controls={`item-settings-${receipt.key}-${i}`}
-                        onclick={() => (item.expanded = !item.expanded)}><Menu size={18} /></button
+                        onclick={() => (item.expanded = !item.expanded)}
                       >
+                        {#if item.expanded}<Check size={18} />{:else}<Pencil size={18} />{/if}
+                      </button>
                       <button
                         class="icon-btn"
                         type="button"
@@ -425,6 +430,23 @@
                     </div>
                     {#if item.expanded}
                       <div class="receipt-item-settings" id={`item-settings-${receipt.key}-${i}`}>
+                        <div class="receipt-item-fields">
+                          <input
+                            aria-label="Item name"
+                            bind:value={item.title}
+                            required
+                            maxlength="100"
+                          />
+                          <AmountInput
+                            name={null}
+                            currencyName={null}
+                            compact
+                            label="Item amount"
+                            bind:value={item.amount}
+                            bind:currency={item.currency}
+                            {rate}
+                          />
+                        </div>
                         <div class="receipt-defaults">
                           <label
                             >Date<input
@@ -436,17 +458,21 @@
                           >
                           <PeopleSelect
                             {members}
+                            {tags}
+                            selectedTags={item.tag_ids ?? receipt.tag_ids}
+                            onTagsChange={(ids) => (item.tag_ids = ids)}
                             selected={item.members ?? receipt.members}
                             onchange={(ids) => (item.members = ids)}
                           />
                         </div>
-                        {#if item.date !== undefined || item.members !== undefined}
+                        {#if item.date !== undefined || item.members !== undefined || item.tag_ids !== undefined}
                           <button
                             class="text-btn"
                             type="button"
                             onclick={() => {
                               delete item.date;
                               delete item.members;
+                              delete item.tag_ids;
                             }}>Use receipt defaults</button
                           >
                         {/if}
@@ -467,12 +493,15 @@
                     receipt.items.push({
                       title: '',
                       amount: '',
-                      currency: receipt.currency === 'EUR' ? 'EUR' : 'CZK'
+                      currency: receipt.currency === 'EUR' ? 'EUR' : 'CZK',
+                      expanded: true
                     })}><Plus size={14} />Add item</button
-                ><strong
-                  >Total {money(
-                    receipt.items.reduce((sum, item) => sum + itemTotal(item), 0)
-                  )}</strong
+                ><button
+                  class="icon-btn"
+                  type="button"
+                  aria-label={`Remove receipt ${receipt.file.name}`}
+                  disabled={busy}
+                  onclick={() => remove(receipt)}><Trash2 size={18} /></button
                 >
               </div>
             </article>{/each}
@@ -552,7 +581,7 @@
   }
   .receipt-review-header {
     display: grid;
-    grid-template-columns: 96px minmax(0, 1fr) 36px;
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     align-items: start;
   }
@@ -619,37 +648,29 @@
   .receipt-products {
     display: flex;
     flex-direction: column;
-    max-height: none;
-    overflow: visible;
-    gap: 12px;
+    gap: 0;
     min-width: 0;
   }
   .receipt-product {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 210px) 76px;
-    align-items: start;
-    gap: 10px;
-    padding-bottom: 0;
+    grid-template-columns: minmax(0, 1fr);
     min-width: 0;
   }
-  .receipt-product > input {
-    grid-column: 1;
-    grid-row: 1;
-  }
-  .receipt-product > :global(.amount-field) {
-    grid-column: 2;
-    grid-row: 1;
-    min-width: 0;
-  }
-  .receipt-item-actions {
-    display: flex;
-    gap: 4px;
-    grid-column: 3;
-    grid-row: 1;
-  }
-  .receipt-item-actions .customized {
+  .receipt-detail-item .customized {
     background: #e5e5e5;
     color: #343434;
+  }
+  .receipt-item-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 210px);
+    gap: 10px;
+    min-width: 0;
+  }
+  .receipt-item-fields > :global(.amount-field) {
+    min-width: 0;
+  }
+  .receipt-thumbnail :global(.receipt-card-summary) {
+    margin-bottom: 0;
   }
   .receipt-item-settings {
     grid-column: 1 / -1;
@@ -719,20 +740,8 @@
     .receipt-selection {
       grid-template-columns: minmax(0, 1fr);
     }
-    .receipt-product {
-      grid-template-columns: minmax(0, 1fr) 76px;
-    }
-    .receipt-product > input {
-      grid-column: 1 / -1;
-      grid-row: 1;
-    }
-    .receipt-product > :global(.amount-field) {
-      grid-column: 1;
-      grid-row: 2;
-    }
-    .receipt-item-actions {
-      grid-column: 2;
-      grid-row: 2;
+    .receipt-item-fields {
+      grid-template-columns: minmax(0, 1fr);
     }
     .receipt-defaults {
       grid-template-columns: minmax(0, 132px) minmax(0, 1fr);

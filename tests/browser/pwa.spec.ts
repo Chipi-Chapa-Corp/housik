@@ -1,3 +1,4 @@
+import { createFixtureTrip } from './fixtures';
 import { test, expect } from '@playwright/test';
 
 test('install metadata and home-screen icons', async ({ page }) => {
@@ -45,8 +46,7 @@ test('offline launch recovers without caching private pages or queuing writes', 
   await page.getByLabel('Name', { exact: true }).fill('PWA tester');
   await page.getByLabel('Password', { exact: true }).fill('pwa-test-password');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('button', { name: 'Sample trip', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /^Sample trip/ })).toBeVisible();
+  const fixture = await createFixtureTrip(page, { people: false });
   const tripUrl = page.url();
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
@@ -102,7 +102,7 @@ test('offline launch recovers without caching private pages or queuing writes', 
   await context.setOffline(false);
   await page.getByRole('link', { name: 'Try again' }).click();
   await expect(page).toHaveURL(tripUrl);
-  await expect(page.getByRole('heading', { name: /^Sample trip/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: fixture.name, exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
   await page.goto(tripUrl);

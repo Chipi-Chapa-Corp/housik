@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test';
 const port = process.env.HOUSIK_E2E_PORT || '5180';
-const fixtureDir = `./.test-data/${Date.now()}`;
+process.env.HOUSIK_TEST_DIR ||= `./.test-data/${Date.now()}`;
+const fixtureDir = process.env.HOUSIK_TEST_DIR;
 export default defineConfig({
   testDir: './tests/browser',
   testIgnore: ['**/pwa.spec.ts', '**/receipts.spec.ts'],

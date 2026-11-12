@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import type { LlmCall } from '../src/lib/llm-usage';
 import {
   fileMime,
   scanProducts,
@@ -13,16 +15,23 @@ const result = (products: unknown[]) =>
   });
 const product = { name: 'Milk', amount: 125, currency: 'EUR' };
 
+test('live comparison pins the exact production prompt before any paid calls', async () => {
+  const pinned = await readFile(new URL('./llm/fixtures/prompt.txt', import.meta.url), 'utf8');
+  assert.equal(receiptPrompt, pinned.trimEnd());
+});
+
 test('one receipt produces one attached-image request with strict product-array output', async () => {
   let requests = 0;
   const products = await scanProducts(bytes, 'image/png', {
     key: 'fixture-key',
     model: 'fixture-model',
+    reasoning: 'low',
     fetch: async (_url, init) => {
       requests++;
       const body = JSON.parse(String(init?.body));
       assert.equal(body.instructions, receiptPrompt);
       assert.equal(body.store, false);
+      assert.deepEqual(body.reasoning, { effort: 'low' });
       assert.equal(body.input.length, 1);
       assert.deepEqual(body.input[0].content, [
         {
@@ -127,4 +136,45 @@ test('provider concurrency is bounded for a multi-receipt batch', async () => {
     )
   );
   assert.equal(maximum, 5);
+});
+
+test('one usage record is emitted for success and for an HTTP failure', async () => {
+  const calls: LlmCall[] = [];
+  await scanProducts(bytes, 'image/png', {
+    key: 'fixture',
+    model: 'gpt-6-luna',
+    reasoning: 'low',
+    onCall: (call) => {
+      calls.push(call);
+    },
+    fetch: async () =>
+      Response.json({
+        id: 'fixture-response',
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          total_tokens: 120,
+          output_tokens_details: { reasoning_tokens: 10 }
+        },
+        output: [
+          { content: [{ type: 'output_text', text: JSON.stringify({ products: [product] }) }] }
+        ]
+      })
+  });
+  await assert.rejects(
+    scanProducts(bytes, 'image/png', {
+      key: 'fixture',
+      model: 'gpt-6-luna',
+      onCall: (call) => {
+        calls.push(call);
+      },
+      fetch: async () => new Response('', { status: 503 })
+    })
+  );
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].responseId, 'fixture-response');
+  assert.equal(calls[0].totalTokens, 120);
+  assert.equal(calls[0].reasoningTokens, 10);
+  assert.equal(calls[1].httpStatus, 503);
+  assert.equal(calls[1].costUsd, null);
 });

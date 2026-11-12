@@ -1,3 +1,4 @@
+import { createFixtureTrip } from './fixtures';
 import { test, expect, type Page } from '@playwright/test';
 const owner = 'Álex Novák! +'.padEnd(20, '!'),
   guest = 'Jamie O’Neil & Co.';
@@ -251,7 +252,6 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await expect(dialog.getByText('Enter items manually', { exact: true })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(dialog.getByRole('heading', { name: 'Review receipt' })).toBeVisible();
-  await dialog.getByLabel('Receipt name').fill('Market receipt');
   await dialog.getByLabel('Item name', { exact: true }).fill('Coffee');
   await dialog.getByLabel('Item amount', { exact: true }).fill('8.50');
   await dialog.getByRole('button', { name: 'Add item', exact: true }).click();
@@ -441,8 +441,7 @@ test('all trip members can manage settings, invitations, expenses and tags', asy
   browser
 }) => {
   await login(page, 'Shared owner');
-  await page.getByRole('button', { name: 'Sample trip', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /^Sample trip/ })).toBeVisible();
+  await createFixtureTrip(page);
   const tripPath = new URL(page.url()).pathname;
   await page.getByRole('button', { name: 'Add expense', exact: true }).click();
   let dialog = page.locator('dialog[open]');
@@ -551,12 +550,13 @@ test('all trip members can manage settings, invitations, expenses and tags', asy
   }
 });
 
-test('sample buyers, personal participation and clean home', async ({ page }) => {
+test('expense buyers, personal participation and clean home', async ({ page }) => {
   await login(page, 'taylor');
   await page.screenshot({ path: 'test-results/home-desktop.png', fullPage: true });
-  await page.getByRole('button', { name: 'Sample trip', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /^Sample trip( \d+)?$/ })).toBeVisible();
-  const groceries = page.locator('.expense-row').filter({ hasText: 'Weekend groceries' });
+  await expect(page.getByRole('button', { name: 'Sample trip', exact: true })).toHaveCount(0);
+  expect((await page.request.post('/?/demo')).status()).toBe(404);
+  await createFixtureTrip(page, { purchase: true });
+  const groceries = page.locator('.expense-row').filter({ hasText: 'Shared purchase' });
   await expect(groceries.locator('.paid-by')).toContainText('Jamie');
   await groceries.click();
   let dialog = page.locator('dialog[open]');

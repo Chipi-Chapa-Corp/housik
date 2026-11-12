@@ -36,6 +36,7 @@
   import AmountInput from '#lib/AmountInput.svelte';
   import ReceiptImport from '#lib/ReceiptImport.svelte';
   import ReceiptPreview from '#lib/ReceiptPreview.svelte';
+  import ReceiptSummary from '#lib/ReceiptSummary.svelte';
   import ReceiptViewer from '#lib/ReceiptViewer.svelte';
   import { cents } from '#lib/money.ts';
   import { inputCurrency, toCzk } from '#lib/currency.ts';
@@ -45,12 +46,18 @@
   let { data } = $props();
   let tab = $state('expenses'),
     filter = $state('all'),
+    receiptFilter = $state(''),
+    groupReceipts = $state(false),
     search = $state('');
+  let receiptPopupId = $state(''),
+    deletingReceiptId = $state(''),
+    deleteReceiptBack = $state(false);
   let modal = $state(''),
     busy = $state(false),
     message = $state(''),
     notice = $state('');
-  let expenseTags = $state<string[]>([]);
+  let expenseTags = $state<string[]>([]),
+    expensePeople = $state<string[]>([]);
   let expenseCurrency = $state('CZK'),
     paymentCurrency = $state('CZK'),
     choiceCurrency = $state('CZK');
@@ -74,8 +81,11 @@
   const visible = $derived(
     data.expenses.filter(
       (e) =>
-        (filter === 'all' || (filter === 'receipt' ? !!e.receipt_id : e.kind === filter)) &&
-        `${e.title} ${e.note} ${data.tags
+        (filter === 'all' ||
+          (filter === 'receipt'
+            ? !!e.receipt_id && (!receiptFilter || e.receipt_id === receiptFilter)
+            : e.kind === filter)) &&
+        `${e.title} ${e.note} ${person(e.payer_id).name} ${data.receipts.find((receipt) => receipt.id === e.receipt_id)?.merchant ?? ''} ${data.tags
           .filter((t) => (e.tag_ids ?? (e.tag_id ? [e.tag_id] : [])).includes(t.id))
           .map((t) => t.name)
           .join(' ')}`
@@ -83,12 +93,47 @@
           .includes(search.toLowerCase())
     )
   );
+  const expenseRows = $derived.by(() => {
+    const rows: { expense: Expense; receiptId: string | null; items: Expense[] }[] = [];
+    const seen = new Set<string>();
+    for (const expense of visible) {
+      if (groupReceipts && expense.receipt_id) {
+        if (seen.has(expense.receipt_id)) continue;
+        seen.add(expense.receipt_id);
+        rows.push({
+          expense,
+          receiptId: expense.receipt_id,
+          items: data.expenses.filter((item) => item.receipt_id === expense.receipt_id)
+        });
+      } else rows.push({ expense, receiptId: null, items: [expense] });
+    }
+    return rows;
+  });
+  const popupReceipt = $derived(data.receipts.find((receipt) => receipt.id === receiptPopupId));
+  const popupItems = $derived(
+    data.expenses.filter((expense) => expense.receipt_id === receiptPopupId)
+  );
+  const deletingReceipt = $derived(
+    data.receipts.find((receipt) => receipt.id === deletingReceiptId)
+  );
+  const deletingItemCount = $derived(
+    data.expenses.filter((expense) => expense.receipt_id === deletingReceiptId).length
+  );
   const current = $derived(
     selected ? data.expenses.find((e) => e.id === selected?.id) || selected : null
   );
   const shares = $derived(
     current ? allocate(current, data.members, data.tags) : new Map<string, number>()
   );
+  const currentReceipt = $derived(
+    data.receipts.find((receipt) => receipt.id === current?.receipt_id)
+  );
+  function visibleTags(expense: Expense) {
+    const receipt = data.receipts.find((receipt) => receipt.id === expense.receipt_id);
+    return data.tags.filter(
+      (tag) => expense.tag_ids?.includes(tag.id) && tag.name !== receipt?.merchant
+    );
+  }
   const today = new Date().toISOString().slice(0, 10);
   const money = (n: number) =>
     new Intl.NumberFormat(data.trip.currency === 'CZK' ? 'cs-CZ' : 'en', {
@@ -111,8 +156,10 @@
     modal = name;
   }
   function addExpense(type = 'product') {
+    receiptPopupId = '';
     editing = null;
     expenseTags = [];
+    expensePeople = [];
     kind = type;
     expenseAmount = '';
     expenseCurrency = 'CZK';
@@ -121,7 +168,11 @@
   }
   function editExpense(e: Expense) {
     editing = e;
-    expenseTags = [...(e.tag_ids ?? (e.tag_id ? [e.tag_id] : []))];
+    expensePeople = [...(e.member_ids ?? [])];
+    expenseTags =
+      !e.share_explicit && e.member_ids?.length
+        ? []
+        : [...(e.tag_ids ?? (e.tag_id ? [e.tag_id] : []))];
     kind = e.kind;
     expenseAmount = ((e.input_amount ?? e.amount) / 100).toFixed(2);
     expenseCurrency = e.input_currency ?? 'CZK';
@@ -129,9 +180,32 @@
     open('expense');
   }
   function viewExpense(e: Expense) {
+    if (modal !== 'receipt-detail') receiptPopupId = '';
     selected = e;
     syncChoice(data.session.member_id!, e);
     open('detail');
+  }
+  function openReceipt(receiptId: string) {
+    receiptPopupId = receiptId;
+    open('receipt-detail');
+  }
+  function closeReceipt() {
+    receiptPopupId = '';
+    modal = '';
+  }
+  function closeExpense() {
+    message = '';
+    modal = receiptPopupId ? 'receipt-detail' : '';
+  }
+  function confirmDeleteReceipt(receiptId: string) {
+    deletingReceiptId = receiptId;
+    deleteReceiptBack = modal === 'receipt-detail';
+    open('delete-receipt');
+  }
+  function cancelDeleteReceipt() {
+    message = '';
+    modal = deleteReceiptBack ? 'receipt-detail' : '';
+    deletingReceiptId = '';
   }
   function syncChoice(member: string, e = current) {
     const c = e?.choices.find((c) => c.member_id === member);
@@ -157,7 +231,12 @@
       if (result.type === 'failure') message = String(result.data?.error || 'Could not save.');
       else if (result.type === 'success') {
         await refreshAll();
-        if (modal !== 'detail' && modal !== 'tags') modal = '';
+        if (modal === 'expense') closeExpense();
+        else if (modal === 'delete-receipt') {
+          if (receiptFilter === deletingReceiptId) receiptFilter = '';
+          deletingReceiptId = '';
+          closeReceipt();
+        } else if (!['detail', 'tags', 'receipt-detail'].includes(modal)) modal = '';
         notice = 'Saved';
         setTimeout(() => (notice = ''), 2400);
       } else await update();
@@ -312,10 +391,16 @@
             <div class="filters" aria-label="Expense type">
               {#each [['all', 'All'], ['rent', 'Stay'], ['product', 'Groceries'], ['other', 'Extras']] as [value, label]}<button
                   class:active={filter === value}
-                  onclick={() => (filter = value)}>{label}</button
+                  onclick={() => {
+                    filter = value;
+                    receiptFilter = '';
+                  }}>{label}</button
                 >{/each}
             </div>
             <div class="toolbar-right">
+              <label class="receipt-group-toggle"
+                ><input type="checkbox" bind:checked={groupReceipts} />Group receipts</label
+              >
               <button
                 class="icon-btn"
                 aria-label="Tags"
@@ -337,12 +422,18 @@
             <div class="table-labels">
               <span>EXPENSE</span><span>PAID BY</span><span>AMOUNT</span><span></span>
             </div>
-            {#each visible as expense}<button
+            {#each expenseRows as row}
+              {@const expense = row.expense}
+              {@const receipt = data.receipts.find((receipt) => receipt.id === row.receiptId)}
+              <button
                 class="expense-row"
-                onclick={() => viewExpense(expense)}
+                onclick={() => (row.receiptId ? openReceipt(row.receiptId) : viewExpense(expense))}
                 ><span class="expense-info"
                   ><span class="expense-icon {expense.kind}"
-                    >{#if expense.kind === 'rent'}<House
+                    >{#if row.receiptId}<ReceiptText
+                        size={23}
+                        strokeWidth={1.6}
+                      />{:else if expense.kind === 'rent'}<House
                         size={21}
                         strokeWidth={1.6}
                       />{:else if expense.kind === 'other'}<Car
@@ -350,30 +441,33 @@
                         strokeWidth={1.6}
                       />{:else}<ShoppingBasket size={21} strokeWidth={1.6} />{/if}</span
                   ><span class="expense-name"
-                    ><strong>{expense.title}</strong><span class="expense-meta"
-                      >{#if expense.receipt_id}<ReceiptText
-                          size={11}
-                        />{/if}{#if expense.tag_ids?.length}{#each expense.tag_ids as tag}<span
-                            class="tag-pill">{data.tags.find((t) => t.id === tag)?.name}</span
-                          >{/each}{/if}{#if expense.kind === 'rent'}<span
-                          >{data.trip.nights} nights · {money(
-                            Math.round(expense.amount / data.trip.nights)
-                          )} / night</span
-                        >{:else if !expense.tag_ids?.length}{expense.note ||
-                          ''}{/if}{#if expense.choices.length}<span class="custom-share"
-                          >Custom split</span
-                        >{/if}</span
+                    ><strong
+                      >{row.receiptId
+                        ? `${person(receipt?.uploader_id ?? expense.payer_id).name}: ${row.items.length} items`
+                        : expense.title}</strong
+                    ><span class="expense-meta"
+                      >{#if expense.receipt_id}<span class="tag-pill with-receipt"
+                          ><ReceiptText size={18} />With receipt</span
+                        >{/if}{#if !row.receiptId}{#each visibleTags(expense) as tag}<span
+                            class="tag-pill">{tag.name}</span
+                          >{/each}{#if expense.kind === 'rent'}<span
+                            >{data.trip.nights} nights · {money(
+                              Math.round(expense.amount / data.trip.nights)
+                            )} / night</span
+                          >{:else if !expense.tag_ids?.length}{expense.note ||
+                            ''}{/if}{#if expense.choices.length}<span class="custom-share"
+                            >Custom split</span
+                          >{/if}{/if}</span
                     ></span
                   ></span
                 ><span class="paid-by"
                   ><NameBubble
-                    name={person(expense.payer_id).name}
-                    color={person(expense.payer_id).color}
+                    name={person(receipt?.uploader_id ?? expense.payer_id).name}
+                    color={person(receipt?.uploader_id ?? expense.payer_id).color}
                   /></span
-                ><strong class="expense-total">{money(expense.amount)}</strong><ChevronRight
-                  size={16}
-                  class="muted"
-                /></button
+                ><strong class="expense-total"
+                  >{money(row.items.reduce((sum, item) => sum + item.amount, 0))}</strong
+                ><ChevronRight size={16} class="muted" /></button
               >{:else}<div class="empty-state">
                 <ShoppingBasket size={31} strokeWidth={1.2} />
                 <h3>{search ? 'No matches' : 'No expenses'}</h3>
@@ -521,25 +615,21 @@
             >{/if}
         </div>
         {#if data.receipts.length}<div class="receipt-grid">
-            {#each data.receipts as receipt}<article class="receipt-card">
+            {#each data.receipts as receipt}
+              {@const items = data.expenses.filter((expense) => expense.receipt_id === receipt.id)}
+              <article class="receipt-card">
                 <ReceiptPreview
+                  joined
                   src={`/trip/${data.trip.id}/receipt/${receipt.id}`}
                   mime={receipt.mime}
                   name={receipt.merchant}
-                  onEnlarge={() =>
-                    (viewedReceipt = {
-                      src: `/trip/${data.trip.id}/receipt/${receipt.id}`,
-                      mime: receipt.mime,
-                      name: receipt.merchant
-                    })}
+                  label={`Open receipt ${receipt.merchant}`}
+                  onEnlarge={() => openReceipt(receipt.id)}
                 />
-                <div class="receipt-card-top">
-                  <span class="expense-icon product"><ReceiptText size={24} /></span><span
-                    class="badge"
-                    >{data.expenses.filter((e) => e.receipt_id === receipt.id).length} items</span
-                  >
-                </div>
-                <h3>{receipt.merchant}</h3>
+                <ReceiptSummary
+                  total={money(items.reduce((sum, expense) => sum + expense.amount, 0))}
+                  count={items.length}
+                />
                 <p class="receipt-author">
                   Uploaded by <NameBubble
                     name={person(receipt.uploader_id).name}
@@ -547,27 +637,25 @@
                   />
                 </p>
                 <div class="receipt-card-bottom">
-                  <strong
-                    >{money(
-                      data.expenses
-                        .filter((e) => e.receipt_id === receipt.id)
-                        .reduce((s, e) => s + e.amount, 0)
-                    )}</strong
-                  ><a
+                  <a
                     class="text-btn"
                     href="/trip/{data.trip.id}/receipt/{receipt.id}"
                     target="_blank"
                     rel="noreferrer">Original <ArrowUpRight size={15} /></a
                   >
                 </div>
-                <button
-                  class="receipt-items-link text-btn"
-                  onclick={() => {
-                    tab = 'expenses';
-                    filter = 'receipt';
-                    search = receipt.merchant;
-                  }}>View items <ArrowRight size={14} /></button
-                >
+                <div class="receipt-card-actions">
+                  <button
+                    class="receipt-items-link text-btn"
+                    onclick={() => openReceipt(receipt.id)}
+                    >View items <ArrowRight size={14} /></button
+                  >
+                  <button
+                    class="icon-btn danger"
+                    aria-label={`Delete receipt ${receipt.merchant}`}
+                    onclick={() => confirmDeleteReceipt(receipt.id)}><Trash2 size={18} /></button
+                  >
+                </div>
               </article>{/each}
           </div>{:else}<div class="panel empty-state receipt-empty">
             <ReceiptText size={45} strokeWidth={1.1} />
@@ -580,7 +668,78 @@
 {#if notice}<Toast message={notice} layerKey={modal} />{/if}
 
 <Modal
-  onClose={() => (modal = '')}
+  onClose={closeReceipt}
+  open={modal === 'receipt-detail'}
+  wide
+  title={popupReceipt
+    ? `${person(popupReceipt.uploader_id).name}: ${popupItems.length} items`
+    : 'Receipt'}
+>
+  {#if popupReceipt}
+    <ReceiptPreview
+      joined
+      src={`/trip/${data.trip.id}/receipt/${popupReceipt.id}`}
+      mime={popupReceipt.mime}
+      name={popupReceipt.merchant}
+      onEnlarge={() =>
+        (viewedReceipt = {
+          src: `/trip/${data.trip.id}/receipt/${popupReceipt.id}`,
+          mime: popupReceipt.mime,
+          name: popupReceipt.merchant
+        })}
+    />
+    <ReceiptSummary
+      total={money(popupItems.reduce((sum, item) => sum + item.amount, 0))}
+      count={popupItems.length}
+    />
+    <div class="receipt-item-list">
+      {#each popupItems as item (item.id)}
+        <div class="receipt-detail-item">
+          <button class="receipt-item-open" onclick={() => viewExpense(item)}>
+            <span>{item.title}</span><strong>{money(item.amount)}</strong>
+          </button>
+          <button
+            class="icon-btn"
+            aria-label={`Edit ${item.title}`}
+            onclick={() => editExpense(item)}><Pencil size={18} /></button
+          >
+          <form method="POST" action="?/deleteExpense" use:enhance={submit}>
+            <input type="hidden" name="id" value={item.id} />
+            <button class="icon-btn danger" aria-label={`Delete ${item.title}`} disabled={busy}
+              ><Trash2 size={18} /></button
+            >
+          </form>
+        </div>
+      {:else}<p class="muted">No items</p>{/each}
+    </div>
+    {#if message}<p class="form-error" role="alert">{message}</p>{/if}
+    <div class="receipt-popup-actions">
+      <button
+        class="icon-btn danger"
+        aria-label={`Delete receipt ${popupReceipt.merchant}`}
+        onclick={() => confirmDeleteReceipt(popupReceipt.id)}><Trash2 size={18} /></button
+      >
+    </div>
+  {/if}
+</Modal>
+<Modal onClose={cancelDeleteReceipt} open={modal === 'delete-receipt'} title="Delete receipt?">
+  {#if deletingReceipt}
+    <form method="POST" action="?/deleteReceipt" use:enhance={submit} class="stack">
+      <input type="hidden" name="id" value={deletingReceipt.id} />
+      <p>
+        Delete this receipt and its {deletingItemCount}
+        {deletingItemCount === 1 ? 'item' : 'items'}?
+      </p>
+      {#if message}<p class="form-error" role="alert">{message}</p>{/if}
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" onclick={cancelDeleteReceipt}>Cancel</button>
+        <button class="btn primary" disabled={busy}>Delete receipt</button>
+      </div>
+    </form>
+  {/if}
+</Modal>
+<Modal
+  onClose={closeExpense}
   open={modal === 'expense'}
   title={editing ? 'Edit expense' : 'Add expense'}
 >
@@ -629,19 +788,39 @@
       >
       <label>Date<input type="date" name="date" value={editing?.date || today} required /></label>
     </div>
-    <TagSelect tags={data.tags} bind:selected={expenseTags} />
+    <TagSelect
+      tags={data.tags}
+      members={data.members}
+      bind:selected={expenseTags}
+      bind:selectedMembers={expensePeople}
+    />
     <label>Note<input name="note" value={editing?.note || ''} maxlength="300" /></label>
     {#if message}<p class="form-error" role="alert">{message}</p>{/if}
     <div class="modal-actions">
-      <button class="btn secondary" type="button" onclick={() => (modal = '')}>Cancel</button
-      ><button class="btn primary" disabled={busy}
+      <button class="btn secondary" type="button" onclick={closeExpense}>Cancel</button><button
+        class="btn primary"
+        disabled={busy}
         >{busy ? 'Saving…' : editing ? 'Save changes' : 'Add expense'}<Plus size={16} /></button
       >
     </div>
   </form>
 </Modal>
-<Modal onClose={() => (modal = '')} open={modal === 'detail'} title={current?.title || 'Expense'}>
-  {#if current}<div class="detail-total">
+<Modal onClose={closeExpense} open={modal === 'detail'} title={current?.title || 'Expense'}>
+  {#if current}
+    {#if currentReceipt}<div class="expense-receipt-preview">
+        <ReceiptPreview
+          src={`/trip/${data.trip.id}/receipt/${currentReceipt.id}`}
+          mime={currentReceipt.mime}
+          name={currentReceipt.merchant}
+          onEnlarge={() =>
+            (viewedReceipt = {
+              src: `/trip/${data.trip.id}/receipt/${currentReceipt.id}`,
+              mime: currentReceipt.mime,
+              name: currentReceipt.merchant
+            })}
+        />
+      </div>{/if}
+    <div class="detail-total">
       <strong>{money(current.amount)}</strong>
       <div class="expense-payment">
         <span>Paid by</span><NameBubble
@@ -701,8 +880,8 @@
           return async ({ result, update }) => {
             busy = false;
             if (result.type === 'success') {
-              modal = '';
               await refreshAll();
+              closeExpense();
             } else await update();
           };
         }}
@@ -891,6 +1070,7 @@
   open={modal === 'receipt'}
   tripId={data.trip.id}
   members={data.members}
+  tags={data.tags}
   rate={data.exchangeRate?.rate ?? null}
   onClose={() => (modal = '')}
   onSaved={async () => {

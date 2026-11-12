@@ -1,0 +1,89 @@
+{
+  "products": [
+    {
+      "name": "Birell pomelo&grep 0.5",
+      "amount": 14940,
+      "currency": "CZK"
+    },
+    {
+      "name": "Milka MMMAX toffee ganz 30s",
+      "amount": 11990,
+      "currency": "CZK"
+    },
+    {
+      "name": "Arc smetanová zmrzlina 130",
+      "amount": 1990,
+      "currency": "CZK"
+    },
+    {
+      "name": "Magnum la pistache 3ks",
+      "amount": 13990,
+      "currency": "CZK"
+    },
+    {
+      "name": "Kunín krémová do omáček 20",
+      "amount": 3290,
+      "currency": "CZK"
+    },
+    {
+      "name": "Kunín krémová do omáček 20",
+      "amount": 3290,
+      "currency": "CZK"
+    },
+    {
+      "name": "Arc smetanová zmrzlina 130",
+      "amount": 1990,
+      "currency": "CZK"
+    },
+    {
+      "name": "MilkaCaramel crunch 90ml",
+      "amount": 4790,
+      "currency": "CZK"
+    },
+    {
+      "name": "MilkaCaramel crunch 90ml",
+      "amount": 4790,
+      "currency": "CZK"
+    },
+    {
+      "name": "Žervé z poděbrad s křenová",
+      "amount": 2290,
+      "currency": "CZK"
+    },
+    {
+      "name": "Muller mix 130g",
+      "amount": 1990,
+      "currency": "CZK"
+    },
+    {
+      "name": "Rios lesní ovoce 200ml",
+      "amount": 2290,
+      "currency": "CZK"
+    },
+    {
+      "name": "Zboží za",
+      "amount": 11990,
+      "currency": "CZK"
+    },
+    {
+      "name": "Zboží za",
+      "amount": 2190,
+      "currency": "CZK"
+    },
+    {
+      "name": "Magnum white chocolate 110",
+      "amount": 4790,
+      "currency": "CZK"
+    },
+    {
+      "name": "Tradiční čokoláda 175g",
+      "amount": 4490,
+      "currency": "CZK"
+    },
+    {
+      "name": "West Quadro mix 200g",
+      "amount": 3990,
+      "currency": "CZK"
+    }
+  ]
+}

@@ -95,11 +95,6 @@
       {:else}<section class="empty-state">
           <h2>No trips</h2>
         </section>{/if}
-      <div class="sample-link">
-        <form method="POST" action="?/demo" use:enhance={submit}>
-          <button class="text-btn" disabled={busy}>Sample trip <ArrowUpRight size={14} /></button>
-        </form>
-      </div>
       {#if error && !createOpen}<p class="form-error" role="alert">{error}</p>{/if}
     </main>
   {/if}

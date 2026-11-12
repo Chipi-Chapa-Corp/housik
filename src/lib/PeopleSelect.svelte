@@ -2,21 +2,48 @@
   import { onMount, tick } from 'svelte';
   import { Check, ChevronDown, X } from '@lucide/svelte';
   import NameBubble from './NameBubble.svelte';
-  import type { Member } from './types';
+  import type { Member, Tag } from './types';
 
-  let { members, selected, onchange, label = 'Share with' }: {
+  let {
+    members,
+    selected,
+    onchange,
+    tags = [],
+    selectedTags = [],
+    onTagsChange = () => {},
+    label = 'Share with'
+  }: {
     members: Member[];
     selected: string[];
     onchange: (ids: string[]) => void;
+    tags?: Tag[];
+    selectedTags?: string[];
+    onTagsChange?: (ids: string[]) => void;
     label?: string;
   } = $props();
   const id = $props.id();
   let root: HTMLDivElement, field: HTMLDivElement, input: HTMLInputElement, popup: HTMLDivElement;
-  let open = $state(false), query = $state(''), active = $state(-1);
-  let left = $state(0), top = $state(0), width = $state(240), maxHeight = $state(260);
+  let open = $state(false),
+    query = $state(''),
+    active = $state(-1);
+  let left = $state(0),
+    top = $state(0),
+    width = $state(240),
+    maxHeight = $state(260);
   const chosen = $derived(members.filter((member) => selected.includes(member.id)));
-  const matches = $derived(members.filter((member) => member.name.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim())));
-  const options = $derived(query ? matches : [{ id: '__all', name: 'Everyone', color: 0 }, ...matches]);
+  type Option = { id: string; name: string; color?: number; kind: 'all' | 'member' | 'tag' };
+  const chosenTags = $derived(tags.filter((tag) => selectedTags.includes(tag.id)));
+  const options = $derived<Option[]>([
+    ...(!query ? [{ id: '__all', name: 'Everyone', kind: 'all' as const }] : []),
+    ...tags
+      .filter((tag) => tag.name.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()))
+      .map((tag) => ({ ...tag, kind: 'tag' as const })),
+    ...members
+      .filter((member) =>
+        member.name.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim())
+      )
+      .map((member) => ({ ...member, kind: 'member' as const }))
+  ]);
 
   function place() {
     if (!open || !field || !popup) return;
@@ -40,7 +67,11 @@
   $effect(() => {
     selected;
     query;
-    input?.setCustomValidity(selected.length ? '' : 'Select at least one person.');
+    input?.setCustomValidity(
+      selected.length || chosenTags.some((tag) => tag.members.length)
+        ? ''
+        : 'Select at least one person.'
+    );
     if (open) void tick().then(place);
   });
   onMount(() => {
@@ -48,9 +79,26 @@
     document.addEventListener('scroll', scroll, true);
     return () => document.removeEventListener('scroll', scroll, true);
   });
-  function choose(memberId: string) {
-    if (memberId === '__all') onchange(selected.length === members.length ? [] : members.map((member) => member.id));
-    else onchange(selected.includes(memberId) ? selected.filter((value) => value !== memberId) : [...selected, memberId]);
+  function choose(option: Option) {
+    if (option.kind === 'all') {
+      onchange(
+        selected.length === members.length && !selectedTags.length
+          ? []
+          : members.map((member) => member.id)
+      );
+      onTagsChange([]);
+    } else if (option.kind === 'tag') {
+      onTagsChange(
+        selectedTags.includes(option.id)
+          ? selectedTags.filter((value) => value !== option.id)
+          : [...selectedTags, option.id]
+      );
+    } else
+      onchange(
+        selected.includes(option.id)
+          ? selected.filter((value) => value !== option.id)
+          : [...selected, option.id]
+      );
     query = '';
     active = -1;
     input.focus();
@@ -63,27 +111,48 @@
     } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       open = true;
-      active = options.length ? (active + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length : -1;
+      active = options.length
+        ? (active + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length
+        : -1;
     } else if (event.key === 'Enter' && open) {
       event.preventDefault();
-      if (active >= 0 && options[active]) choose(options[active].id);
-    } else if (event.key === 'Backspace' && !query && selected.length) {
-      onchange(selected.slice(0, -1));
+      if (active >= 0 && options[active]) choose(options[active]);
+    } else if (event.key === 'Backspace' && !query && (selected.length || selectedTags.length)) {
+      if (selected.length) onchange(selected.slice(0, -1));
+      else onTagsChange(selectedTags.slice(0, -1));
     } else if (event.key === 'Tab') open = false;
   }
 </script>
 
 <svelte:window
   onresize={place}
-  onclick={(event) => { if (root && !root.contains(event.target as Node)) open = false; }}
+  onclick={(event) => {
+    if (root && !root.contains(event.target as Node)) open = false;
+  }}
 />
 <div class="people-multiselect" bind:this={root}>
   <label for={id}>{label}</label>
   <div class="member-input" bind:this={field}>
+    {#each chosenTags as tag (tag.id)}
+      <span class="tag-pill member-chip" title={tag.name}>
+        <span class="chip-name">{tag.name}</span>
+        <button
+          type="button"
+          aria-label={`Remove tag ${tag.name}`}
+          onclick={() => onTagsChange(selectedTags.filter((value) => value !== tag.id))}
+          ><X size={13} aria-hidden="true" /></button
+        >
+      </span>
+    {/each}
     {#each chosen as member (member.id)}
       <span class="name-bubble member-chip color-{member.color % 6}" title={member.name}>
         <span class="chip-name">{member.name}</span>
-        <button type="button" aria-label={`Remove ${member.name}`} onclick={() => onchange(selected.filter((value) => value !== member.id))}><X size={13} aria-hidden="true" /></button>
+        <button
+          type="button"
+          aria-label={`Remove ${member.name}`}
+          onclick={() => onchange(selected.filter((value) => value !== member.id))}
+          ><X size={13} aria-hidden="true" /></button
+        >
       </span>
     {/each}
     <input
@@ -97,10 +166,21 @@
       aria-controls={`${id}-options`}
       aria-activedescendant={open && active >= 0 ? `${id}-option-${active}` : undefined}
       onfocus={() => (open = true)}
-      oninput={() => { open = true; active = -1; }}
+      oninput={() => {
+        open = true;
+        active = -1;
+      }}
       onkeydown={key}
     />
-    <button class="member-toggle" type="button" aria-label={`Choose ${label.toLowerCase()}`} onclick={() => { open = !open; if (open) input.focus(); }}><ChevronDown size={18} aria-hidden="true" /></button>
+    <button
+      class="member-toggle"
+      type="button"
+      aria-label={`Choose ${label.toLowerCase()}`}
+      onclick={() => {
+        open = !open;
+        if (open) input.focus();
+      }}><ChevronDown size={18} aria-hidden="true" /></button
+    >
   </div>
   <div
     class="member-options"
@@ -115,34 +195,137 @@
     style:width={`${width}px`}
     style:max-height={`${maxHeight}px`}
   >
-    {#each options as member, index (member.id)}
-      {@const checked = member.id === '__all' ? selected.length === members.length : selected.includes(member.id)}
-      <button type="button" role="option" id={`${id}-option-${index}`} aria-selected={checked} tabindex="-1" class:active={active === index}
-        onmousedown={(event) => event.preventDefault()}
-        onclick={() => choose(member.id)}
-        onkeydown={key}
-      >
-        {#if member.id === '__all'}<span>Everyone</span>{:else}<NameBubble name={member.name} color={member.color} />{/if}
-        {#if checked}<Check size={16} aria-hidden="true" />{/if}
-      </button>
-    {:else}<p>No matches</p>{/each}
+    <div
+      class="member-options-scroll native-scroll"
+      style:max-height={`${Math.max(0, maxHeight - 14)}px`}
+    >
+      {#each options as member, index (`${member.kind}-${member.id}`)}
+        {@const checked =
+          member.kind === 'all'
+            ? selected.length === members.length && !selectedTags.length
+            : member.kind === 'tag'
+              ? selectedTags.includes(member.id)
+              : selected.includes(member.id)}
+        <button
+          type="button"
+          role="option"
+          id={`${id}-option-${index}`}
+          aria-selected={checked}
+          tabindex="-1"
+          class:active={active === index}
+          onmousedown={(event) => event.preventDefault()}
+          onclick={() => choose(member)}
+          onkeydown={key}
+        >
+          {#if member.kind === 'all'}<span>Everyone</span>{:else if member.kind === 'tag'}<span
+              class="tag-pill">{member.name}</span
+            >{:else}<NameBubble name={member.name} color={member.color} />{/if}
+          {#if checked}<Check size={16} aria-hidden="true" />{/if}
+        </button>
+      {:else}<p>No matches</p>{/each}
+    </div>
   </div>
 </div>
 
 <style>
-  .people-multiselect { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .member-input { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 48px; padding: 6px; border: 1px solid #e3e3e3; border-radius: 8px; background: #fdfdfd; min-width: 0; }
-  .member-input:focus-within { outline: 3px solid #adadad22; border-color: #969696; }
-  .member-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 4px 6px; }
-  .chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .member-chip button { display: inline-flex; align-items: center; justify-content: center; padding: 2px; flex-shrink: 0; }
-  input { flex: 1; width: 24px; min-width: 24px; min-height: 28px; padding: 0 4px; background: transparent; border: 0; box-shadow: none; }
-  input:focus { outline: none; }
-  .member-toggle { display: flex; align-items: center; justify-content: center; padding: 0 2px; height: 28px; margin-left: auto; }
-  .member-options { position: fixed; inset: auto; margin: 0; padding: 6px; border: 1px solid #e3e3e3; border-radius: 9px; background: #fff; color: #343434; box-shadow: 0 8px 24px #0000001a; overflow-y: auto; }
-  .member-options button { display: flex; width: 100%; min-height: 42px; justify-content: space-between; align-items: center; gap: 8px; padding: 6px; text-align: left; border-radius: 5px; }
-  .member-options button.active, .member-options button:hover { background: #f3f3f3; }
-  .member-options :global(.name-bubble) { min-width: 0; overflow-wrap: anywhere; }
-  .member-options p { padding: 8px; }
-  .member-input :global(.field-error) { flex-basis: 100%; }
+  .people-multiselect {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .member-input {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-height: 48px;
+    padding: 6px;
+    border: 1px solid #e3e3e3;
+    border-radius: 8px;
+    background: #fdfdfd;
+    min-width: 0;
+  }
+  .member-input:focus-within {
+    outline: 3px solid #adadad22;
+    border-color: #969696;
+  }
+  .member-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    padding: 4px 6px;
+  }
+  .chip-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .member-chip button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    flex-shrink: 0;
+  }
+  input {
+    flex: 1;
+    width: 24px;
+    min-width: 24px;
+    min-height: 28px;
+    padding: 0 4px;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+  input:focus {
+    outline: none;
+  }
+  .member-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 2px;
+    height: 28px;
+    margin-left: auto;
+  }
+  .member-options {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    padding: 6px;
+    border: 1px solid #e3e3e3;
+    border-radius: 9px;
+    background: #fff;
+    color: #343434;
+    box-shadow: 0 8px 24px #0000001a;
+    overflow: hidden;
+  }
+  .member-options button {
+    display: flex;
+    width: 100%;
+    min-height: 42px;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 6px;
+    text-align: left;
+    border-radius: 5px;
+  }
+  .member-options button.active,
+  .member-options button:hover {
+    background: #f3f3f3;
+  }
+  .member-options :global(.name-bubble) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .member-options p {
+    padding: 8px;
+  }
+  .member-input :global(.field-error) {
+    flex-basis: 100%;
+  }
 </style>

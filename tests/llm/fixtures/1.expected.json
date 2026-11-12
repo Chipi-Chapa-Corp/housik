@@ -1,0 +1,64 @@
+{
+  "products": [
+    {
+      "name": "Monster energy 500ml",
+      "amount": 3990,
+      "currency": "CZK"
+    },
+    {
+      "name": "Birell pomelo&grep 0.5",
+      "amount": 14940,
+      "currency": "CZK"
+    },
+    {
+      "name": "Croissant jahodov. 60g",
+      "amount": 1690,
+      "currency": "CZK"
+    },
+    {
+      "name": "Chlazené",
+      "amount": 700,
+      "currency": "CZK"
+    },
+    {
+      "name": "Muller vanilla-jogurt chuc",
+      "amount": 1990,
+      "currency": "CZK"
+    },
+    {
+      "name": "Muller chantilly jog&čoco",
+      "amount": 1990,
+      "currency": "CZK"
+    },
+    {
+      "name": "Lay 110g Oven Baked yogurt",
+      "amount": 4490,
+      "currency": "CZK"
+    },
+    {
+      "name": "Bohemia vroubky s pizza 12",
+      "amount": 4490,
+      "currency": "CZK"
+    },
+    {
+      "name": "Sondey milk&hazelnut 25g",
+      "amount": 1380,
+      "currency": "CZK"
+    },
+    {
+      "name": "LOTUS VANILLA 150G",
+      "amount": 4290,
+      "currency": "CZK"
+    },
+    {
+      "name": "Pedro pásky 80g Tutti Frui",
+      "amount": 2290,
+      "currency": "CZK"
+    },
+    {
+      "name": "Skittles 152g crazy sours",
+      "amount": 4990,
+      "currency": "CZK"
+    }
+  ]
+}

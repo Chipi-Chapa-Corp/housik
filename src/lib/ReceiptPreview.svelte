@@ -4,15 +4,25 @@
     src,
     mime,
     name,
-    onEnlarge
-  }: { src: string; mime: string; name: string; onEnlarge: () => void } = $props();
+    label,
+    onEnlarge,
+    joined = false
+  }: {
+    src: string;
+    mime: string;
+    name: string;
+    label?: string;
+    onEnlarge: () => void;
+    joined?: boolean;
+  } = $props();
   let broken = $state(false);
 </script>
 
 <button
   type="button"
   class="receipt-preview"
-  aria-label={`Enlarge receipt ${name}`}
+  class:joined
+  aria-label={label ?? `Enlarge receipt ${name}`}
   onclick={onEnlarge}
 >
   {#if mime.startsWith('image/') && !broken}<img {src} alt={name} onerror={() => (broken = true)} />
@@ -38,6 +48,10 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+  }
+  .receipt-preview.joined {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
   span {
     overflow-wrap: anywhere;

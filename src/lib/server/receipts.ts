@@ -5,6 +5,8 @@ import { validDate } from '../dates';
 import { maxReceipts, maxReceiptBytes, type ReceiptProduct, type ReceiptReview } from '../receipts';
 import { fileMime, ReceiptError, scanProducts } from './receipt-scanner';
 import { receiptStorage } from './receipt-storage';
+import { nextReceiptName } from './receipt-names';
+import { reasoningEffort, configuredRates } from '../llm-usage';
 
 db.exec(`CREATE TABLE IF NOT EXISTS receipt_drafts (
  id TEXT PRIMARY KEY, trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
@@ -65,8 +67,21 @@ export async function stageReceipt(
     try {
       items = await scanProducts(buffer, mime, {
         key: env.OPENAI_API_KEY,
-        model: env.OPENAI_MODEL || 'gpt-4.1-mini',
+        model: env.OPENAI_MODEL || 'gpt-6.1-sol',
         url: env.OPENAI_RESPONSES_URL,
+        reasoning: reasoningEffort(env.OPENAI_REASONING_EFFORT),
+        rates: configuredRates({
+          input: env.OPENAI_INPUT_USD_PER_MILLION,
+          cachedInput: env.OPENAI_CACHED_INPUT_USD_PER_MILLION,
+          cacheWrite: env.OPENAI_CACHE_WRITE_USD_PER_MILLION,
+          output: env.OPENAI_OUTPUT_USD_PER_MILLION
+        }),
+        onCall: (call) => {
+          console.info(
+            'receipt_scan_usage',
+            JSON.stringify({ tripId, receiptId: draftId, ...call })
+          );
+        },
         signal
       });
     } catch (cause) {
@@ -112,24 +127,35 @@ export async function commitReceipts(tripId: string, raw: unknown) {
       const kind = entry.kind ?? 'product';
       if (!['product', 'other', 'rent'].includes(kind))
         throw new ReceiptError('Choose a receipt type.');
-      const merchant = String(entry.merchant || '')
-        .trim()
-        .slice(0, 80);
-      if (!merchant) throw new ReceiptError('Add a receipt name.');
       const payer = draft.uploader_id;
       if (!data.members.some((member) => member.id === payer))
         throw new ReceiptError('Choose who paid.');
       const memberIds = new Set(data.members.map((member) => member.id));
-      function selectedMembers(value: unknown): string[] {
+      function selection(people: unknown, selectedTags: unknown = []) {
         if (
-          !Array.isArray(value) ||
-          !value.length ||
-          value.some((member) => typeof member !== 'string' || !memberIds.has(member))
+          !Array.isArray(people) ||
+          people.some((member) => typeof member !== 'string' || !memberIds.has(member))
         )
-          throw new ReceiptError('Choose at least one person from this trip.');
-        return [...new Set(value)];
+          throw new ReceiptError('Choose people from this trip.');
+        if (
+          !Array.isArray(selectedTags) ||
+          selectedTags.some(
+            (tag) => typeof tag !== 'string' || !data.tags.some((entry) => entry.id === tag)
+          )
+        )
+          throw new ReceiptError('Choose tags from this trip.');
+        const members = [...new Set(people as string[])];
+        const tag_ids = [...new Set(selectedTags as string[])];
+        const resolved = [
+          ...new Set([
+            ...members,
+            ...data.tags.filter((tag) => tag_ids.includes(tag.id)).flatMap((tag) => tag.members)
+          ])
+        ];
+        if (!resolved.length) throw new ReceiptError('Choose at least one person from this trip.');
+        return { members, tag_ids, resolved };
       }
-      const members = selectedMembers(entry.members);
+      const common = selection(entry.members, entry.tag_ids);
       const date = validDate(String(entry.date || today()));
       if (!Array.isArray(entry.items) || !entry.items.length || entry.items.length > 200)
         throw new ReceiptError('Add 1–200 items per receipt.');
@@ -141,15 +167,17 @@ export async function commitReceipts(tripId: string, raw: unknown) {
           if (!title) throw new ReceiptError('Each item needs a name.');
           const input = await amountInput(item.amount, item.currency ?? 'CZK');
           if (input.amount <= 0) throw new ReceiptError('Each item needs a positive amount.');
+          const share = selection(item.members ?? common.members, item.tag_ids ?? common.tag_ids);
           return {
             title,
             ...input,
             date: item.date === undefined ? date : validDate(String(item.date)),
-            members: item.members === undefined ? undefined : selectedMembers(item.members)
+            members: share.members,
+            tag_ids: share.tag_ids
           };
         })
       );
-      return { ...draft, id: entry.draft, merchant, kind, payer, members, items, date };
+      return { ...draft, id: entry.draft, kind, payer, members: common.resolved, items, date };
     })
   );
   db.transaction(() => {
@@ -159,21 +187,18 @@ export async function commitReceipts(tripId: string, raw: unknown) {
         !db.prepare('SELECT 1 FROM receipt_drafts WHERE id=? AND trip_id=?').get(receipt.id, tripId)
       )
         throw new ReceiptError('Receipt already imported or removed.');
-      let tagName = receipt.merchant,
-        suffix = 1;
-      while (db.prepare('SELECT 1 FROM tags WHERE trip_id=? AND name=?').get(tripId, tagName))
-        tagName = `${receipt.merchant} · ${++suffix}`;
+      const { name: tagName, sequence } = nextReceiptName(db, tripId, receipt.payer);
       const tagId = id();
       db.prepare('INSERT INTO tags VALUES(?,?,?)').run(tagId, tripId, tagName);
       for (const member of receipt.members)
         db.prepare('INSERT INTO tag_members VALUES(?,?)').run(tagId, member);
       db.prepare(
-        'INSERT INTO receipts(id,trip_id,uploader_id,filename,mime,merchant) VALUES(?,?,?,?,?,?)'
-      ).run(receipt.id, tripId, receipt.payer, receipt.filename, receipt.mime, receipt.merchant);
+        'INSERT INTO receipts(id,trip_id,uploader_id,filename,mime,merchant,sequence) VALUES(?,?,?,?,?,?,?)'
+      ).run(receipt.id, tripId, receipt.payer, receipt.filename, receipt.mime, tagName, sequence);
       for (const item of receipt.items) {
         const expenseId = id();
         db.prepare(
-          'INSERT INTO expenses(id,trip_id,title,amount,payer_id,kind,tag_id,receipt_id,note,date,input_amount,input_currency) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)'
+          'INSERT INTO expenses(id,trip_id,title,amount,payer_id,kind,tag_id,receipt_id,note,date,input_amount,input_currency,share_explicit) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)'
         ).run(
           expenseId,
           tripId,
@@ -186,9 +211,11 @@ export async function commitReceipts(tripId: string, raw: unknown) {
           '',
           item.date,
           item.input_amount,
-          item.input_currency
+          item.input_currency,
+          1
         );
-        db.prepare('INSERT INTO expense_tags VALUES(?,?)').run(expenseId, tagId);
+        for (const selectedTag of item.tag_ids)
+          db.prepare('INSERT INTO expense_tags VALUES(?,?)').run(expenseId, selectedTag);
         for (const member of item.members ?? [])
           db.prepare('INSERT INTO expense_members VALUES(?,?)').run(expenseId, member);
       }
@@ -202,7 +229,6 @@ export async function commitReceipt(tripId: string, form: FormData) {
   return commitReceipts(tripId, [
     {
       draft: String(form.get('draft')),
-      merchant: form.get('merchant'),
       kind: form.get('kind') || 'product',
       date: form.get('date') || today(),
       members: form.getAll('members').map(String),
@@ -226,4 +252,22 @@ export async function discardReceipt(tripId: string, receiptId: string) {
     .prepare('DELETE FROM receipt_drafts WHERE id=? AND trip_id=?')
     .run(receiptId, tripId);
   if (result.changes) await originals.remove(receiptId);
+}
+
+export async function deleteReceipt(tripId: string, receiptId: string) {
+  db.transaction(() => {
+    const receipt = db
+      .prepare('SELECT merchant FROM receipts WHERE id=? AND trip_id=?')
+      .get(receiptId, tripId) as { merchant: string } | undefined;
+    if (!receipt) throw new ReceiptError('Receipt not found.');
+    db.prepare('DELETE FROM expenses WHERE receipt_id=? AND trip_id=?').run(receiptId, tripId);
+    db.prepare('DELETE FROM receipts WHERE id=? AND trip_id=?').run(receiptId, tripId);
+    // Remove its generated tag only when no remaining expense uses it.
+    db.prepare(
+      `DELETE FROM tags WHERE trip_id=? AND name=?
+      AND NOT EXISTS (SELECT 1 FROM expense_tags WHERE tag_id=tags.id)
+      AND NOT EXISTS (SELECT 1 FROM expenses WHERE tag_id=tags.id)`
+    ).run(tripId, receipt.merchant);
+  })();
+  await originals.remove(receiptId);
 }

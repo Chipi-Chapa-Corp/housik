@@ -322,13 +322,6 @@ input::-webkit-inner-spin-button {
   color: var(--green);
   margin-left: auto;
 }
-.sample-link {
-  color: #4b5056;
-  align-items: center;
-  gap: 10px;
-  margin-top: 38px;
-  display: flex;
-}
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -627,7 +620,16 @@ nav button:hover {
 .toolbar-right {
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   display: flex;
+}
+.receipt-group-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  min-height: 42px;
+  cursor: pointer;
 }
 .search-box {
   color: #4b5056;
@@ -1069,7 +1071,87 @@ nav button:hover {
 .receipt-items-link {
   margin-top: 12px;
 }
+.receipt-card-actions,
+.receipt-popup-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+.receipt-card-actions .receipt-items-link {
+  margin-top: 0;
+}
+.receipt-popup-actions {
+  justify-content: flex-end;
+}
+.receipt-item-list {
+  display: grid;
+}
+.receipt-detail-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px 36px;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.receipt-item-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 0;
+  text-align: left;
+}
+.receipt-item-open span {
+  overflow-wrap: anywhere;
+}
+.receipt-item-open strong {
+  white-space: nowrap;
+  color: var(--ink);
+}
+.with-receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.with-receipt svg {
+  flex-shrink: 0;
+}
+.expense-receipt-preview {
+  margin-bottom: 20px;
+}
+.receipt-card-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 4px;
+  align-items: stretch;
+  margin-bottom: 16px;
+}
+.receipt-card-summary > * {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px;
+  color: #4b5056;
+  background: #f3f3f3;
+  border-radius: 0 0 8px 8px;
+}
+.receipt-summary-total {
+  justify-self: center;
+  text-align: center;
+}
+.receipt-summary-icon {
+  justify-self: start;
+}
+.receipt-summary-count {
+  justify-self: end;
+}
 dialog {
+  --modal-padding: 28px;
   width: 440px;
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 50px);
@@ -1077,8 +1159,18 @@ dialog {
   background: #ffffff;
   border: 1px solid #e4e4e4;
   border-radius: 16px;
-  padding: 28px;
+  padding: var(--modal-padding);
+  overflow: hidden;
   box-shadow: 0 25px 100px #35353522;
+}
+.native-scroll {
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+.modal-scroll {
+  max-height: calc(100dvh - 52px - var(--modal-padding) - var(--modal-padding));
 }
 dialog.wide {
   width: 620px;
@@ -1665,12 +1757,6 @@ textarea[aria-invalid='true'] {
   }
   .trip-card-meta strong {
   }
-  .sample-link {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  .sample-link .text-btn {
-  }
   .transfer-row {
     gap: 8px;
     padding: 18px 15px;
@@ -1829,7 +1915,8 @@ textarea[aria-invalid='true'] {
     gap: 6px;
   }
   dialog {
-    padding: 23px;
+    --modal-padding: 23px;
+    padding: var(--modal-padding);
   }
   .modal-header h2 {
   }
@@ -2552,7 +2639,8 @@ dialog {
     margin-bottom: 24px;
   }
   dialog {
-    padding: 23px;
+    --modal-padding: 23px;
+    padding: var(--modal-padding);
   }
   .segment button {
     padding: 11px 5px;
@@ -2855,7 +2943,7 @@ dialog {
   left: 0;
   right: 0;
   max-height: 280px;
-  overflow: auto;
+  overflow: hidden;
   z-index: 5;
   padding: 15px;
   background: #ffffff;
@@ -2863,6 +2951,12 @@ dialog {
   border-radius: 9px;
   box-shadow: 0 10px 26px #35353520;
   margin: 6px 0 0;
+}
+.people-options-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 248px;
 }
 .people-options.open {
   display: flex;
