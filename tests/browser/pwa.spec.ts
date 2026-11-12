@@ -18,9 +18,21 @@ test('cold first paint is styled without JavaScript or external CSS and never sw
     const path = new URL(route.request().url()).pathname;
     // A cold connection: CSS is unavailable and fonts arrive after first paint.
     if (path.endsWith('.css')) return route.abort();
-    if (path.endsWith('.woff2')) {
+    // Let the old Latin-only preload finish: separate delayed Cyrillic files
+    // must not leave mixed Onest/fallback weights on the same page.
+    if (path.endsWith('.woff2') && path !== '/fonts/onest-latin.woff2') {
       fontRequested = true;
       await fontDownload;
+    }
+    if (route.request().isNavigationRequest()) {
+      const response = await route.fetch();
+      return route.fulfill({
+        response,
+        body: (await response.text()).replace(
+          '</body>',
+          '<div class="expense-name" id="font-fixture"><strong id="latin">Hot tub</strong><strong id="cyrillic">Постельное</strong><strong id="czech">Příliš žluťoučký</strong></div></body>'
+        )
+      });
     }
     return route.continue();
   });
@@ -40,19 +52,33 @@ test('cold first paint is styled without JavaScript or external CSS and never sw
     await expect(page.getByRole('heading', { name: 'Sign in' })).toHaveCSS('font-size', '16px');
     await expect(page.locator('link[rel="preload"][as="font"]')).toHaveAttribute(
       'href',
-      '/fonts/onest-latin.woff2'
+      '/fonts/onest.woff2'
     );
     const inlineStyles = await page.locator('head style').allTextContents();
     expect(inlineStyles.join('\n')).toContain('.signin-card');
     expect(inlineStyles.join('\n')).toContain('font-display:optional');
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('DOM.enable');
+    await cdp.send('CSS.enable');
+    const { root } = await cdp.send('DOM.getDocument');
+    const usedFonts = [];
+    for (const selector of ['#latin', '#cyrillic', '#czech']) {
+      const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+      const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+      usedFonts.push(fonts.map(({ familyName, isCustomFont }) => ({ familyName, isCustomFont })));
+      await expect(page.locator(selector)).toHaveCSS('font-weight', '550');
+    }
+    expect(usedFonts[1]).toEqual(usedFonts[0]);
+    expect(usedFonts[2]).toEqual(usedFonts[0]);
+    await cdp.detach();
     const layout = () =>
-      page.locator('.signin-card').evaluate((card) => {
+      page.locator('body').evaluate((card) => {
         const rect = (bounds: DOMRect) => {
           const { x, y, width, height } = bounds;
           return { x, y, width, height };
         };
-        const boxes = [card, ...card.querySelectorAll('h1, label, input, button')].map((element) =>
-          rect(element.getBoundingClientRect())
+        const boxes = [card, ...card.querySelectorAll('h1, label, input, button, strong')].map(
+          (element) => rect(element.getBoundingClientRect())
         );
         const text = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
         while (text.nextNode()) {
