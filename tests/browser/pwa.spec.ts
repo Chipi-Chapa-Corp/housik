@@ -1,6 +1,79 @@
 import { createFixtureTrip } from './fixtures';
 import { test, expect } from '@playwright/test';
 
+test('cold first paint is styled without JavaScript or external CSS and never swaps a late font', async ({
+  browser,
+  baseURL
+}) => {
+  const context = await browser.newContext({
+    baseURL,
+    javaScriptEnabled: false,
+    serviceWorkers: 'block'
+  });
+  const page = await context.newPage();
+  let releaseFonts!: () => void;
+  const fontDownload = new Promise<void>((resolve) => (releaseFonts = resolve));
+  let fontRequested = false;
+  await context.route('**/*', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    // A cold connection: CSS is unavailable and fonts arrive after first paint.
+    if (path.endsWith('.css')) return route.abort();
+    if (path.endsWith('.woff2')) {
+      fontRequested = true;
+      await fontDownload;
+    }
+    return route.continue();
+  });
+  try {
+    const response = await page.goto('/', { waitUntil: 'domcontentloaded' });
+    expect(response?.ok()).toBe(true);
+    await expect
+      .poll(() =>
+        page.evaluate(() => performance.getEntriesByName('first-contentful-paint').length)
+      )
+      .toBe(1);
+    expect(fontRequested).toBe(true);
+    expect(await page.evaluate(() => document.fonts.status)).toBe('loading');
+    await expect(page.locator('html')).not.toHaveAttribute('data-hydrated');
+    await expect(page.locator('body')).toHaveCSS('margin', '0px');
+    await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(247, 247, 248)');
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toHaveCSS('font-size', '16px');
+    await expect(page.locator('link[rel="preload"][as="font"]')).toHaveAttribute(
+      'href',
+      '/fonts/onest-latin.woff2'
+    );
+    const inlineStyles = await page.locator('head style').allTextContents();
+    expect(inlineStyles.join('\n')).toContain('.signin-card');
+    expect(inlineStyles.join('\n')).toContain('font-display:optional');
+    const layout = () =>
+      page.locator('.signin-card').evaluate((card) => {
+        const rect = (bounds: DOMRect) => {
+          const { x, y, width, height } = bounds;
+          return { x, y, width, height };
+        };
+        const boxes = [card, ...card.querySelectorAll('h1, label, input, button')].map((element) =>
+          rect(element.getBoundingClientRect())
+        );
+        const text = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+        while (text.nextNode()) {
+          if (!text.currentNode.textContent?.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(text.currentNode);
+          boxes.push(rect(range.getBoundingClientRect()));
+        }
+        return boxes;
+      });
+    const firstPaint = await layout();
+    releaseFonts();
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    expect(await page.evaluate(() => document.fonts.check('400 16px Onest', 'Sign in'))).toBe(true);
+    expect(await layout()).toEqual(firstPaint);
+  } finally {
+    releaseFonts();
+    await context.close();
+  }
+});
+
 test('install metadata and home-screen icons', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(

@@ -9,6 +9,8 @@ export default defineConfig({
     sveltekit({
       adapter: adapter({ out: testDirectory ? `${testDirectory}/build` : 'build' }),
       preprocess: vitePreprocess(),
+      // Ship initial page styles in the head, before any content can paint.
+      inlineStyleThreshold: 64 * 1024,
       outDir: testDirectory ? `${testDirectory}/kit` : '.svelte-kit'
     })
   ]
