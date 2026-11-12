@@ -3330,3 +3330,12 @@ nav button.active {
     grid-row: 1 / 3;
   }
 }
+
+.trip-access-card h1 {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.invite-user {
+  display: flex;
+  align-items: center;
+}

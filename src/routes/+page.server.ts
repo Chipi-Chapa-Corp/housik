@@ -3,15 +3,12 @@ import type { Actions, PageServerLoad } from './$types';
 import { db, id } from '#lib/server/db.ts';
 import { tripNights } from '#lib/dates.ts';
 import {
-  createSession,
   getSession,
-  hash,
+  signIn,
   locationUrl,
-  password,
   rateLimit,
   text,
   validDate,
-  verify,
   logout
 } from '#lib/server/auth.ts';
 
@@ -44,21 +41,7 @@ export const actions: Actions = {
   login: async (event) => {
     const f = await event.request.formData();
     try {
-      rateLimit(`login:${event.getClientAddress()}`);
-      const name = text(f, 'name', 20),
-        username = name.toLowerCase(),
-        pass = password(f);
-      let user = db
-        .prepare('SELECT id,password FROM users WHERE username=? COLLATE NOCASE')
-        .get(username) as { id: string; password: string } | undefined;
-      if (user && !verify(pass, user.password))
-        throw new Error('Incorrect password for this name.');
-      if (!user) {
-        const userId = id();
-        db.prepare('INSERT INTO users VALUES(?,?,?,?)').run(userId, username, hash(pass), name);
-        user = { id: userId, password: '' };
-      }
-      createSession(event, user.id);
+      signIn(event, f);
       return { success: true };
     } catch (e) {
       if (isHttpError(e)) throw e;

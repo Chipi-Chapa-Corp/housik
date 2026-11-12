@@ -1038,3 +1038,53 @@ test('receipt Share with combines people and tags at receipt and item level and 
       dialog.locator('.split-person').filter({ hasText: person.name }).locator('strong')
     ).toHaveText(/^0,(31|32)/);
 });
+
+test('deleting a legacy receipt after viewing an item never recalculates the deleted item', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const tripPath = await start(page, 'Legacy deletion');
+  const tripId = tripPath.split('/').at(-1)!;
+  const dialog = page.locator('dialog[open]');
+  await dialog.locator('input[type=file]').setInputFiles(await receiptImage(page, 'unknown'));
+  await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'Review receipt', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: /^Add 1 item for/ }).click();
+  await expect(dialog).toHaveCount(0);
+  const receipt = rows('SELECT * FROM receipts WHERE trip_id=?', tripId)[0];
+  const item = rows('SELECT * FROM expenses WHERE receipt_id=?', receipt.id)[0];
+  // Older receipt items derive their participants from the generated tag.
+  const fixture = new Database(join(directory(), 'housik.sqlite'));
+  try {
+    fixture.transaction(() => {
+      fixture.prepare('UPDATE expenses SET share_explicit=0 WHERE id=?').run(item.id);
+      fixture.prepare('DELETE FROM expense_members WHERE expense_id=?').run(item.id);
+      fixture.prepare('INSERT OR IGNORE INTO expense_tags VALUES(?,?)').run(item.id, item.tag_id);
+    })();
+  } finally {
+    fixture.close();
+  }
+  await page.reload();
+  await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Receipts', exact: true }).first().click();
+  await page.getByRole('button', { name: `Open receipt ${receipt.merchant}`, exact: true }).click();
+  await dialog.locator('.receipt-item-open').click();
+  await expect(dialog.getByRole('heading', { name: 'Shares', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog.locator('.receipt-detail-item')).toHaveCount(1);
+  await dialog
+    .getByRole('button', { name: `Delete receipt ${receipt.merchant}`, exact: true })
+    .click();
+  await dialog.getByRole('button', { name: 'Delete receipt', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'No receipts', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+  expect(rows('SELECT id FROM receipts WHERE id=?', receipt.id)).toHaveLength(0);
+  expect(rows('SELECT id FROM expenses WHERE id=?', item.id)).toHaveLength(0);
+  expect(rows('SELECT id FROM tags WHERE id=?', item.tag_id)).toHaveLength(0);
+  await page.reload();
+  await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: /^Test trip/ })).toBeVisible();
+});

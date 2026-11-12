@@ -1,6 +1,6 @@
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { error, redirect, type RequestEvent } from '@sveltejs/kit';
-import { db } from './db';
+import { db, id } from './db';
 export type User = { id: string; username: string; name: string };
 export type Session = {
   trip_id: string;
@@ -43,6 +43,49 @@ export function createSession(event: RequestEvent, userId: string) {
   const token = randomBytes(32).toString('hex');
   db.prepare('INSERT INTO sessions(token,user_id) VALUES(?,?)').run(digest(token), userId);
   setCookie(event, token);
+}
+export function signIn(event: RequestEvent, form: FormData): User {
+  rateLimit(`login:${event.getClientAddress()}`);
+  const name = text(form, 'name', 20),
+    username = name.toLowerCase(),
+    pass = password(form);
+  let user = db
+    .prepare('SELECT id,username,name,password FROM users WHERE username=? COLLATE NOCASE')
+    .get(username) as (User & { password: string }) | undefined;
+  if (user && !verify(pass, user.password)) throw new Error('Incorrect password for this name.');
+  if (!user) {
+    user = { id: id(), username, name, password: hash(pass) };
+    db.prepare('INSERT INTO users VALUES(?,?,?,?)').run(
+      user.id,
+      user.username,
+      user.password,
+      user.name
+    );
+  }
+  createSession(event, user.id);
+  return { id: user.id, username: user.username, name: user.name };
+}
+
+export function joinTrip(tripId: string, user: User) {
+  db.transaction(() => {
+    if (!db.prepare('SELECT 1 FROM trips WHERE id=?').get(tripId)) error(404, 'Trip not found.');
+    if (
+      db
+        .prepare('SELECT 1 FROM members WHERE trip_id=? AND username=? COLLATE NOCASE')
+        .get(tripId, user.username)
+    )
+      return;
+    const count = db.prepare('SELECT COUNT(*) AS n FROM members WHERE trip_id=?').get(tripId) as {
+      n: number;
+    };
+    db.prepare('INSERT INTO members VALUES(?,?,?,?,?)').run(
+      id(),
+      tripId,
+      user.name,
+      user.username,
+      count.n % 6
+    );
+  })();
 }
 export function logout(event: RequestEvent) {
   const token = event.cookies.get('housik');

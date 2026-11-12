@@ -154,7 +154,8 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   const outsiderPage = await outsider.newPage();
   await login(outsiderPage, 'outsider');
   const denied = await outsider.request.get(tripPath);
-  expect(denied.status()).toBe(403);
+  expect(denied.status()).toBe(200);
+  expect(await denied.text()).toContain('Join trip');
   await outsider.close();
   await page.reload();
   await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);

@@ -108,7 +108,7 @@ Open the URL printed by Vite. Enter a name (up to 20 characters) and password; a
 
 ## Sharing
 
-Invite a person's name from the trip. They may already have an account or create it later using that name. Their trip appears after sign-in. Names are case-insensitive. The URL alone does not grant access. Invitations apply immediately; include only names belonging to the intended person.
+Share the trip link or invite a person's name from People. Signed-in visitors who are not members see Join trip; joining adds their own account once. Signed-out visitors see Sign in · trip name, with a searchable list of existing participant names and the option to enter a new name. Submitting signs them in or creates their account, then joins the trip. Existing accounts still require their password, and existing members open the trip directly. Before joining, visitors can see the trip title and participant names; expenses, receipts and trip actions remain restricted to members. Names are case-insensitive.
 
 ## Install as an app
 

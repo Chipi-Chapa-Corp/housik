@@ -106,5 +106,7 @@ test('offline launch recovers without caching private pages or queuing writes', 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
   await page.goto(tripUrl);
-  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: `Sign in · ${fixture.name}`, exact: true })
+  ).toBeVisible();
 });

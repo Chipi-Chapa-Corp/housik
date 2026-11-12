@@ -2,17 +2,44 @@ import { error, fail, isHttpError, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db, id, tripData } from '#lib/server/db.ts';
 import { tripNights } from '#lib/dates.ts';
-import { requireSession, logout, text, validDate, locationUrl } from '#lib/server/auth.ts';
+import {
+  getSession,
+  joinTrip,
+  signIn,
+  requireSession,
+  logout,
+  text,
+  validDate,
+  locationUrl
+} from '#lib/server/auth.ts';
 import { allocate, balances, settle } from '#lib/money.ts';
 import * as env from '$app/env/private';
 import { commitReceipt, commitReceipts, deleteReceipt } from '#lib/server/receipts.ts';
 import { amountInput, convertInput, exchangeRates } from '#lib/server/exchange-rates.ts';
 
 export const load: PageServerLoad = async (event) => {
+  const trip = db.prepare('SELECT id,name,owner_id FROM trips WHERE id=?').get(event.params.id) as
+    { id: string; name: string; owner_id: string } | undefined;
+  if (!trip) error(404, 'Trip not found.');
+  const user = getSession(event);
+  const member =
+    user &&
+    db
+      .prepare('SELECT 1 FROM members WHERE trip_id=? AND username=? COLLATE NOCASE')
+      .get(trip.id, user.username);
+  if (!user || (trip.owner_id !== user.id && !member)) {
+    const invite = { id: trip.id, name: trip.name };
+    if (user) return { access: 'join' as const, invite, user };
+    const names = db
+      .prepare('SELECT name,color FROM members WHERE trip_id=? ORDER BY rowid')
+      .all(trip.id) as { name: string; color: number }[];
+    return { access: 'signin' as const, invite, names };
+  }
   const session = requireSession(event);
   const data = tripData(session.trip_id);
   const ledger = balances(data.members, data.expenses, data.tags, data.payments);
   return {
+    access: 'member' as const,
     ...data,
     session,
     ledger,
@@ -43,6 +70,18 @@ function assertAllocations(tripId: string) {
   for (const e of d.expenses) allocate(e, d.members, d.tags);
 }
 export const actions: Actions = {
+  join: wrap((event) => {
+    const user = getSession(event);
+    if (!user) redirect(303, `/trip/${event.params.id}`);
+    joinTrip(event.params.id, user);
+    redirect(303, `/trip/${event.params.id}`);
+  }),
+  login: wrap((event, form) => {
+    if (!db.prepare('SELECT 1 FROM trips WHERE id=?').get(event.params.id))
+      error(404, 'Trip not found.');
+    joinTrip(event.params.id, signIn(event, form));
+    redirect(303, `/trip/${event.params.id}`);
+  }),
   logout: (event) => {
     logout(event);
     redirect(303, '/');
