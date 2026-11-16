@@ -1,5 +1,6 @@
 import { createFixtureTrip, selectTripTab, selectPaymentMember } from './fixtures';
 import { test, expect, type Page } from '@playwright/test';
+import { exercisePlacePhotos, placePhotoFixture } from './place-photos';
 const owner = 'Álex Novák! +'.padEnd(20, '!'),
   guest = 'Jamie O’Neil & Co.';
 const pass = 'weekend-test-password';
@@ -710,6 +711,10 @@ test('all trip members can manage settings, invitations, expenses and tags', asy
       'href',
       'https://maps.example.com/shared'
     );
+    await member
+      .getByLabel('Place photos', { exact: true })
+      .setInputFiles(await placePhotoFixture(800, 600));
+    await expect(member.locator('.place-photos .photo-tile')).toHaveCount(1);
     await member.getByRole('button', { name: 'People', exact: true }).first().click();
     await member.getByRole('button', { name: 'Invite', exact: true }).click();
     dialog = member.locator('dialog[open]');
@@ -769,6 +774,7 @@ test('all trip members can manage settings, invitations, expenses and tags', asy
       page.getByRole('heading', { name: 'Shared permissions trip', exact: true })
     ).toBeVisible();
     await expect(page.locator('.trip-meta-row')).toContainText('Shared invite');
+    await expect(page.locator('.place-photos .photo-tile')).toHaveCount(1);
     await expect(page.locator('.expense-row').filter({ hasText: 'Reviewed purchase' })).toHaveCount(
       0
     );
@@ -777,7 +783,9 @@ test('all trip members can manage settings, invitations, expenses and tags', asy
   }
 });
 
-test('Home navigation, expense buyers and personal participation', async ({ page }) => {
+test('Home navigation, place photos, expense buyers and personal participation', async ({
+  page
+}) => {
   await login(page, 'taylor');
   await page.screenshot({ path: 'test-results/home-desktop.png', fullPage: true });
   await expect(page.getByRole('button', { name: 'Sample trip', exact: true })).toHaveCount(0);
@@ -835,4 +843,5 @@ test('Home navigation, expense buyers and personal participation', async ({ page
   await close(page);
   await page.getByRole('button', { name: 'People', exact: true }).first().click();
   await expect(page.locator('.people-grid')).not.toContainText(/sample-\d-[a-f0-9]+/);
+  await exercisePlacePhotos(page, trip.path);
 });

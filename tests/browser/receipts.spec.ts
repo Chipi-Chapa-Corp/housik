@@ -178,9 +178,23 @@ test('batch previews, per-file scanning, manual failure review and atomic import
   });
   await failed.getByRole('button', { name: 'Enlarge receipt fail.png', exact: true }).click();
   const viewer = page.locator('dialog[open]').last();
-  await viewer.getByRole('button', { name: 'Zoom in', exact: true }).click();
-  await expect(viewer.getByAltText('fail.png', { exact: true })).toHaveAttribute('style', /200%/);
-  await viewer.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(viewer.getByAltText('fail.png', { exact: true })).toBeVisible();
+  const fittedWidth = (await viewer.locator('img').boundingBox())!.width;
+  await viewer.locator('img').dblclick();
+  await expect(viewer).toHaveClass(/zoomed/);
+  expect((await viewer.locator('img').boundingBox())!.width).toBeGreaterThan(fittedWidth);
+  await viewer.locator('img').dblclick();
+  await expect(viewer).not.toHaveClass(/zoomed/);
+  await expect(viewer.getByRole('heading')).toHaveCount(0);
+  await expect(viewer.getByRole('button', { name: 'Close', exact: true })).toHaveCount(0);
+  await expect(viewer.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
+  await expect(viewer.getByRole('button', { name: 'Next image' })).toBeVisible();
+  await viewer.getByRole('button', { name: 'Next image' }).click();
+  await expect(viewer.getByAltText('fail.png', { exact: true })).toHaveCount(0);
+  await viewer.getByRole('button', { name: 'Previous image' }).click();
+  await expect(viewer.getByAltText('fail.png', { exact: true })).toBeVisible();
+  await page.screenshot({ path: '.test-data/receipt-work/image-viewer.png', fullPage: false });
+  await viewer.click({ position: { x: 1, y: 1 } });
   await expect(page.locator('dialog[open]')).toHaveCount(1);
   const drafts = rows('SELECT * FROM receipt_drafts WHERE trip_id=? ORDER BY filename', tripId);
   expect(drafts).toHaveLength(2);
@@ -743,9 +757,10 @@ test('receipt cards, expense previews and modal padding use the simplified prese
     .click();
   const viewer = page.locator('dialog[open]').last();
   await expect(page.locator('dialog[open]')).toHaveCount(2);
-  await viewer.click({ position: { x: 10, y: 70 } });
+  await viewer.locator('img').click();
   await expect(viewer).toBeVisible();
-  await viewer.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(viewer.getByRole('button', { name: 'Next image' })).toHaveCount(0);
+  await viewer.click({ position: { x: 1, y: 1 } });
   await expect(page.locator('dialog[open]')).toHaveCount(1);
   await page.screenshot({
     path: '.test-data/receipt-work/expense-receipt-preview.png',

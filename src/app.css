@@ -3458,3 +3458,24 @@ nav button.active {
 .negative {
   color: #b32e32 !important;
 }
+
+.add-place-photos {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 160px;
+  padding: 24px;
+  border: 1px dashed #cbd0d7;
+  border-radius: 12px;
+  background: #eff0f3;
+  color: #38414d;
+}
+.add-place-photos:hover:not(:disabled) {
+  background: #e8eaee;
+}
+
+body:has(dialog.image-viewer[open]) .toast[popover] {
+  bottom: 84px;
+}

@@ -34,6 +34,7 @@
   import Toast from '#lib/Toast.svelte';
   import NameBubble from '#lib/NameBubble.svelte';
   import MemberSelect from '#lib/MemberSelect.svelte';
+  import PlacePhotos from '#lib/PlacePhotos.svelte';
   import TagSelect from '#lib/TagSelect.svelte';
   import AmountInput from '#lib/AmountInput.svelte';
   import ReceiptImport from '#lib/ReceiptImport.svelte';
@@ -79,6 +80,55 @@
   let viewedReceipt = $state<{ src: string; mime: string; name: string } | null>(null);
   let memberUsername = $state('');
   let settingsArrival = $state('');
+  let placePhotoInput: HTMLInputElement;
+  let placePhotoViewer = $state(false);
+  let photosUploading = $state(false),
+    photoProgress = $state(''),
+    photoError = $state('');
+  async function uploadPlacePhotos() {
+    const files = Array.from(placePhotoInput.files ?? []);
+    placePhotoInput.value = '';
+    if (!files.length || photosUploading) return;
+    const tripId = data.trip.id;
+    photosUploading = true;
+    photoError = '';
+    let saved = 0,
+      failed = 0,
+      lastError = '';
+    try {
+      for (const [index, file] of files.entries()) {
+        photoProgress = `Adding photos (${index + 1}/${files.length})`;
+        try {
+          if (file.size > 10 * 1024 * 1024) throw new Error('Choose photos up to 10 MB each.');
+          const form = new FormData();
+          form.set('file', file);
+          const response = await fetch(`/trip/${tripId}/photos`, {
+            method: 'POST',
+            body: form
+          });
+          const result = await response.json().catch(() => ({}));
+          if (response.status !== 201 || typeof result.id !== 'string')
+            throw new Error(result.error || 'Could not add this photo.');
+          saved++;
+        } catch (error) {
+          failed++;
+          lastError = error instanceof Error ? error.message : 'Could not add this photo.';
+        }
+      }
+      if (saved) {
+        await refreshAll();
+        notice = `${saved} photo${saved === 1 ? '' : 's'} added`;
+        setTimeout(() => (notice = ''), 3000);
+      }
+      if (failed)
+        photoError = `${failed} photo${failed === 1 ? '' : 's'} couldn't be added. ${lastError}`;
+    } catch {
+      photoError = 'Photos saved. Reload to view them.';
+    } finally {
+      photosUploading = false;
+      photoProgress = '';
+    }
+  }
   const total = $derived(data.expenses.reduce((s, e) => s + e.amount, 0));
   const mine = $derived(data.ledger.find((r) => r.id === data.session.member_id)!);
   const outstanding = $derived(data.ledger.reduce((s, e) => s + Math.max(0, e.net), 0));
@@ -467,6 +517,29 @@
           </div>
         </button>
       </section>
+      {#if data.placePhotos.length}
+        <PlacePhotos
+          photos={data.placePhotos}
+          tripId={data.trip.id}
+          onViewerChange={(open) => (placePhotoViewer = open)}
+          onRemoved={() => {
+            notice = 'Photo removed';
+            setTimeout(() => (notice = ''), 3000);
+          }}
+        />
+      {:else}
+        <button
+          type="button"
+          class="add-place-photos"
+          disabled={photosUploading}
+          onclick={() => placePhotoInput.click()}
+        >
+          <Plus size={20} />{photosUploading ? photoProgress : 'Add place photos'}
+        </button>
+      {/if}
+      {#if photoError && modal !== 'settings'}<p class="form-error" role="alert">
+          {photoError}
+        </p>{/if}
     {:else if tab === 'expenses'}
       <div class="content-grid">
         <section class="expenses-section">
@@ -724,7 +797,19 @@
     {/if}
   </main>
 </div>
-{#if notice}<Toast message={notice} layerKey={modal} />{/if}
+{#if notice}<Toast
+    message={notice}
+    layerKey={`${modal}:${placePhotoViewer}:${!!viewedReceipt}`}
+  />{/if}
+<input
+  bind:this={placePhotoInput}
+  type="file"
+  accept="image/jpeg,image/png,image/webp,image/avif,image/tiff"
+  multiple
+  hidden
+  aria-label="Place photos"
+  onchange={uploadPlacePhotos}
+/>
 
 <Modal
   onClose={closeReceipt}
@@ -1100,9 +1185,18 @@
         /></label
       >
     </div>
+    <button
+      type="button"
+      class="btn secondary"
+      disabled={photosUploading}
+      onclick={() => placePhotoInput.click()}
+    >
+      <Plus size={18} />{photosUploading ? photoProgress : 'Add place photos'}
+    </button>
+    {#if photoError}<p class="form-error" role="alert">{photoError}</p>{/if}
     {#if message}<p class="form-error" role="alert">{message}</p>{/if}<button
       class="btn primary full"
-      disabled={busy}>Save trip <Check size={16} /></button
+      disabled={busy || photosUploading}>Save trip <Check size={16} /></button
     >
   </form></Modal
 >
@@ -1150,4 +1244,12 @@
     setTimeout(() => (notice = ''), 2400);
   }}
 />
-<ReceiptViewer receipt={viewedReceipt} onClose={() => (viewedReceipt = null)} />
+<ReceiptViewer
+  bind:receipt={viewedReceipt}
+  receipts={data.receipts.map((receipt) => ({
+    src: `/trip/${data.trip.id}/receipt/${receipt.id}`,
+    mime: receipt.mime,
+    name: receipt.merchant
+  }))}
+  onClose={() => (viewedReceipt = null)}
+/>

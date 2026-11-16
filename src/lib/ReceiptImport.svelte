@@ -528,7 +528,15 @@
     {/if}
   </div>
 </Modal>
-<ReceiptViewer receipt={enlarged} onClose={() => (enlarged = null)} />
+<ReceiptViewer
+  bind:receipt={enlarged}
+  receipts={receipts.map((receipt) => ({
+    src: receipt.src,
+    mime: receipt.mime,
+    name: receipt.file.name
+  }))}
+  onClose={() => (enlarged = null)}
+/>
 
 <style>
   .receipt-workspace {

@@ -73,6 +73,11 @@ CREATE TABLE IF NOT EXISTS payments (
  amount INTEGER NOT NULL CHECK(amount > 0), date TEXT NOT NULL, note TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS login_limits (key TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS place_photos (
+ id TEXT PRIMARY KEY, trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+ width INTEGER NOT NULL CHECK(width > 0), height INTEGER NOT NULL CHECK(height > 0),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 `);
 if (
   !(db.prepare('PRAGMA table_info(trips)').all() as { name: string }[]).some(
@@ -180,5 +185,8 @@ export function tripData(tripId: string) {
     merchant: string;
     created: string;
   }[];
-  return { trip, members, tags, expenses, payments, receipts };
+  const placePhotos = db
+    .prepare('SELECT id,width,height FROM place_photos WHERE trip_id=? ORDER BY rowid')
+    .all(tripId) as { id: string; width: number; height: number }[];
+  return { trip, members, tags, expenses, payments, receipts, placePhotos };
 }
