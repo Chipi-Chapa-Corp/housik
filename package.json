@@ -14,6 +14,7 @@
     "test:llm:diff": "node --import tsx tests/llm/show-diffs.ts",
     "test:e2e": "playwright test",
     "test:receipts": "playwright test --config playwright.receipts.config.ts",
+    "test:google-photos": "playwright test --config playwright.google-photos.config.ts",
     "test:pwa": "playwright test --config playwright.pwa.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

@@ -5,6 +5,8 @@ export const variables = defineEnvVars({
   EXCHANGE_RATE_URL: {
     schema: (value: string | undefined) => value || 'https://api.frankfurter.dev/v2/rate/EUR/CZK'
   },
+  GOOGLE_PHOTOS_CLIENT_ID: { schema: (value: string | undefined) => value || '' },
+  GOOGLE_PHOTOS_CLIENT_SECRET: { schema: (value: string | undefined) => value || '' },
   OPENAI_API_KEY: { schema: (value: string | undefined) => value || '' },
   OPENAI_REASONING_EFFORT: { schema: (value: string | undefined) => value ?? 'low' },
   OPENAI_INPUT_USD_PER_MILLION: { schema: (value: string | undefined) => value || '' },

@@ -15,7 +15,7 @@ Open <http://localhost:4827>. Podman works with the same files: `podman compose 
 
 `Containerfile` builds the app and its native SQLite dependency in a separate build stage. The running container uses the non-root `node` user. SQLite and uploaded receipts live in the `housik_data` named volume and survive container replacement. The service includes a health check. Production Podman storage uses a `:U` volume mapping so the dedicated volume belongs to the container’s non-root user. New data and receipt directories use mode 0700, originals and the database use 0600. Startup verifies that database and receipt storage are writable; permission problems fail startup with a server-side ownership diagnostic.
 
-Set `OPENAI_API_KEY` in `.env` to enable receipt scanning. No API key is needed for the rest of the app. `.env`, local databases, uploads, and test data are excluded from the image and Git.
+Set `OPENAI_API_KEY` in `.env` to enable receipt scanning. Google Photos imports optionally use a Google OAuth client (see below). No API key is needed for the remaining features. `.env`, local databases, uploads, and test data are excluded from the image and Git.
 
 Optional `.env` settings:
 
@@ -128,6 +128,21 @@ The app fetches the latest EUR/CZK reference rate from [Frankfurter](https://fra
 
 All trips use CZK. UI text uses 1rem throughout. Amounts have no plus/minus signs: red means unpaid, green means unreceived, and gray means settled. People and Unpaid show remaining / original total after partial payments, coloring only the remaining amount; fully settled People cards show their original total in gray. Expenses and Paid payments show neutral full totals. Payment entry uses centered name pills with dropdown arrows inside. When you are the sender, any receiver is available; choosing another sender locks the receiver to you. The server rejects payments that do not involve the current user. Settle buttons appear only on your own transfers. Payments recorded by the receiver are immediately Paid; otherwise they are Pending until the receiver confirms receipt. Pending payments reserve amounts in the Unpaid plan but do not count as confirmed transfers in balances. Sent and confirmation dates appear below each payment. Both parties may move Paid payments back to Pending, or remove Pending payments, after confirmation. A warning highlights another payment of the same amount between the same people.
 
+## Google Photos
+
+Trip settings has Google Photos → Connect. Sign in to Google, search for your album in Google's picker, select photos, and finish with Done. Selected photos are saved into the trip's existing gallery for all participants. Reload opens a fresh picker and skips photos already imported into that trip using Google's persistent media IDs, including photos subsequently removed from Housik. Uploaded photos are preserved. Videos are skipped; failed photos can be retried. Imports run in small batches while the trip is open; reloading the same trip in the same browser tab resumes its pending import. Cancel stops subsequent batches; photos already saved remain.
+
+Setup (once per deployment):
+
+1. Create or choose a [Google Cloud project](https://console.cloud.google.com/) and enable **Google Photos Picker API**.
+2. Configure the OAuth consent screen with the scope `https://www.googleapis.com/auth/photospicker.mediaitems.readonly`. While the app is in Testing, add the Google accounts that will connect as test users. Public use may require Google's verification; testing refresh tokens can expire after seven days.
+3. Create an OAuth **Web application** client. Add the exact authorized redirect URI `<app origin>/auth/google-photos/callback`, for example `http://127.0.0.1:5175/auth/google-photos/callback` for this development server. Register production's HTTPS origin separately. Google requires redirect URIs to satisfy its hostname rules; use an accepted domain if it rejects your hosting hostname.
+4. Set `GOOGLE_PHOTOS_CLIENT_ID` and `GOOGLE_PHOTOS_CLIENT_SECRET` in the server's `.env`, then restart it. Compose forwards both variables. Each Housik user connects their own Google account; credentials never go to the browser.
+
+Only explicitly selected media is accessible. Access/refresh tokens are stored server-side in the private SQLite database; active import sessions also remain server-side and release their temporary access when finished or cancelled. You can revoke Housik's access in [Google account connections](https://myaccount.google.com/connections). Revoking access does not delete copies already saved to a trip; use the gallery's Remove action. Google account passwords are never requested by Housik. The app requests only the Picker scope, without library-wide access or background album syncing.
+
+See [Google's picker flow](https://developers.google.com/photos/picker/guides/get-started-picker), [persistent item IDs](https://developers.google.com/photos/picker/reference/rest/v1/mediaItems), and [OAuth configuration](https://developers.google.com/identity/protocols/oauth2/web-server).
+
 ## Split rules
 
 Amounts use integer minor units (cents/halers). An ungrouped expense defaults to everyone. The Share with dropdown lists tags above individual people and accepts both. The selected people and the union of tag participants share the expense, with each person counted once; Everyone uses the whole trip. Existing receipt member overrides retain their shares and appear as individual selections when edited. A tag defines its default participants. Each signed-in member can adjust only their own participation. An individual inclusion/exclusion overrides that default. Full payers split the whole expense equally among themselves. Extra contributions are added to the volunteer’s ordinary share. Other participants split the reduced remainder. Volunteers never receive a discount from their own extra, and shares of other expenses stay unchanged. Extras cannot exceed the other participants’ shares. The app rejects a split with no payers.
@@ -170,9 +185,10 @@ npx playwright install chromium
 npm run test:e2e
 npm run test:pwa
 npm run test:receipts
+npm run test:google-photos
 ```
 
-Browser tests use a separate SQLite database and receipt directory. `test:receipts` covers multiple files, provider success/failure, manual fallback, removal, atomic import and access controls. Set `HOUSIK_E2E_PORT` to use a separate fixture port. `test:pwa` builds a production fixture and verifies styled first paint without JavaScript or external CSS, delayed-font layout stability, the manifest, icons, service worker, offline recovery and cache boundaries. For headed tests/screenshots on the shared Linux machine, use the `isolated-gui` skill available in your agent environment and its private display/session; never use the user's display. `HEADED=1` enables a visible test browser on that private display. `E2E_EXTERNAL_SERVER=1` uses an already-running fixture server at port 5180.
+Browser tests use a separate SQLite database and receipt directory. `test:google-photos` uses a fake OAuth/picker provider and fixture images to verify connection, Reload deduplication, cancellation, persistence and access controls without contacting Google. `test:receipts` covers multiple files, provider success/failure, manual fallback, removal, atomic import and access controls. Set `HOUSIK_E2E_PORT` to use a separate fixture port. `test:pwa` builds a production fixture and verifies styled first paint without JavaScript or external CSS, delayed-font layout stability, the manifest, icons, service worker, offline recovery and cache boundaries. For headed tests/screenshots on the shared Linux machine, use the `isolated-gui` skill available in your agent environment and its private display/session; never use the user's display. `HEADED=1` enables a visible test browser on that private display. `E2E_EXTERNAL_SERVER=1` uses an already-running fixture server at port 5180.
 
 `npm run test:llm` is an opt-in live comparison against the three supplied receipt photos. It loads provider settings from `.env` and verifies the exact prompt and image attachments. It reports numeric differences without test failures or assertion traces; name differences are informational. Colored side-by-side reports and actual JSON are saved in `.test-data/llm/`. Use `npm run test:llm:diff` to replay saved responses without provider calls. Both commands are excluded from the default test suite. See [tests/llm/README.md](tests/llm/README.md).
 

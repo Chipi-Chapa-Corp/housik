@@ -15,6 +15,7 @@ import {
 import { allocate, balances, settlementProgress } from '#lib/money.ts';
 import * as env from '$app/env/private';
 import { commitReceipt, commitReceipts, deleteReceipt } from '#lib/server/receipts.ts';
+import { googlePhotos } from '#lib/server/google-photos.ts';
 import { amountInput, convertInput, exchangeRates } from '#lib/server/exchange-rates.ts';
 
 export const load: PageServerLoad = async (event) => {
@@ -45,6 +46,10 @@ export const load: PageServerLoad = async (event) => {
     ledger,
     settlement: settlementProgress(data.members, data.expenses, data.tags, data.payments),
     scanning: !!env.OPENAI_API_KEY,
+    googlePhotos: {
+      configured: googlePhotos.configured,
+      connected: googlePhotos.connected(session.user.id)
+    },
     exchangeRate: await exchangeRates.refresh()
   };
 };

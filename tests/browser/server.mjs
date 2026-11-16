@@ -74,6 +74,11 @@ const provider = createServer(async (request, response) => {
 await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
 const env = {
   ...process.env,
+  ...(process.env.HOUSIK_GOOGLE_PHOTOS_FIXTURE === 'true'
+    ? {
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --import=${new URL('./google-photos-provider.mjs', import.meta.url).pathname}`
+      }
+    : {}),
   EXCHANGE_RATE_URL: `http://127.0.0.1:${provider.address().port}/rate`,
   ...(fixture
     ? {

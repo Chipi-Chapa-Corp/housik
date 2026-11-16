@@ -35,6 +35,7 @@
   import NameBubble from '#lib/NameBubble.svelte';
   import MemberSelect from '#lib/MemberSelect.svelte';
   import PlacePhotos from '#lib/PlacePhotos.svelte';
+  import GooglePhotos from '#lib/GooglePhotos.svelte';
   import TagSelect from '#lib/TagSelect.svelte';
   import AmountInput from '#lib/AmountInput.svelte';
   import ReceiptImport from '#lib/ReceiptImport.svelte';
@@ -1194,6 +1195,18 @@
       <Plus size={18} />{photosUploading ? photoProgress : 'Add place photos'}
     </button>
     {#if photoError}<p class="form-error" role="alert">{photoError}</p>{/if}
+    <GooglePhotos
+      tripId={data.trip.id}
+      configured={data.googlePhotos.configured}
+      connected={data.googlePhotos.connected}
+      onImported={async (added) => {
+        await refreshAll();
+        if (added) {
+          notice = `${added} photo${added === 1 ? '' : 's'} added`;
+          setTimeout(() => (notice = ''), 3000);
+        }
+      }}
+    />
     {#if message}<p class="form-error" role="alert">{message}</p>{/if}<button
       class="btn primary full"
       disabled={busy || photosUploading}>Save trip <Check size={16} /></button
