@@ -86,8 +86,12 @@ if (process.env.HOUSIK_GOOGLE_PHOTOS_FIXTURE === 'true') {
         ? ['one', 'two']
         : ['one', 'two', 'three'];
     return Response.json({
-      mediaItems: ids.map((id) => ({
+      mediaItems: ids.map((id, position) => ({
         id,
+        createTime:
+          id === 'clip'
+            ? '2020-11-20T09:30:00Z'
+            : `2020-11-20T${String(9 + position).padStart(2, '0')}:00:00Z`,
         type: id === 'clip' ? 'VIDEO' : 'PHOTO',
         mediaFile: {
           baseUrl: `https://lh3.googleusercontent.com/${id}`,

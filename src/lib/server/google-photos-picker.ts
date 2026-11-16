@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { maxPlacePhotoBytes, maxPlaceVideoBytes } from '../place-media';
+import { setPlacePhotoCreateTime } from './place-photo-dates';
 
 const scope = 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly';
 const api = 'https://photospicker.googleapis.com/v1';
@@ -9,6 +10,7 @@ const digest = (value: string) => createHash('sha256').update(value).digest('hex
 export class GooglePhotosError extends Error {}
 type Item = {
   id: string;
+  createTime?: string;
   type: string;
   mediaFile: {
     baseUrl: string;
@@ -333,6 +335,7 @@ export function googlePhotosPicker(options: {
               outcome = 'failed';
             }
           }
+          if (outcome !== 'failed') setPlacePhotoCreateTime(db, tripId, item.id, item.createTime);
         }
         db.prepare(
           `UPDATE google_photos_jobs SET cursor=cursor+1,${outcome}=${outcome}+1 WHERE id=?`

@@ -197,7 +197,8 @@ test('mixed imports update the gallery before completion and videos play, seek, 
   await expect(firstTile.locator('img')).toHaveCSS('opacity', '1');
   expect((await firstTile.boundingBox())!.height).toBeCloseTo(beforeLoad!.height, 0);
   await page.unroute('**/photos/*?size=thumbnail');
-  const tile = page.getByRole('button', { name: 'Play place video 4', exact: true });
+  // The video was imported last but belongs between the first two photos by createTime.
+  const tile = page.getByRole('button', { name: 'Play place video 2', exact: true });
   await expect(tile).toBeVisible();
   await tile.click();
   const viewer = page.locator('dialog.image-viewer[open]');

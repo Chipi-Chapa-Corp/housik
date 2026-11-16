@@ -7,6 +7,7 @@ import { checkWritableDirectory } from './storage';
 import { migrateReceiptNames } from './receipt-names';
 import { migratePaymentStatus } from './payment-status';
 import { migrateGooglePhotos } from './google-photos-schema';
+import { migratePlacePhotoDates, orderedPlacePhotos } from './place-photo-dates';
 import type { Expense, Member, Tag, Payment } from '#lib/types.ts';
 
 const path = resolve(env.DATABASE_PATH || './data/housik.sqlite');
@@ -116,6 +117,7 @@ db.transaction(() => {
 migrateReceiptNames(db);
 migratePaymentStatus(db);
 migrateGooglePhotos(db);
+migratePlacePhotoDates(db);
 export const id = () => randomUUID();
 export const today = () => new Date().toISOString().slice(0, 10);
 export type Trip = {
@@ -188,10 +190,6 @@ export function tripData(tripId: string) {
     merchant: string;
     created: string;
   }[];
-  const placePhotos = db
-    .prepare(
-      'SELECT id,width,height,mime,duration FROM place_photos WHERE trip_id=? ORDER BY rowid'
-    )
-    .all(tripId) as import('#lib/types.ts').PlacePhoto[];
+  const placePhotos = orderedPlacePhotos(db, tripId);
   return { trip, members, tags, expenses, payments, receipts, placePhotos };
 }

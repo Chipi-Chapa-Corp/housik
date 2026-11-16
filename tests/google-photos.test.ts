@@ -3,14 +3,22 @@ import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import { googlePhotosPicker } from '../src/lib/server/google-photos-picker';
 import { migrateGooglePhotos } from '../src/lib/server/google-photos-schema';
+import {
+  migratePlacePhotoDates,
+  orderedPlacePhotos,
+  setPlacePhotoCreateTime
+} from '../src/lib/server/place-photo-dates';
 
 function fixture() {
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   db.exec(`CREATE TABLE users(id TEXT PRIMARY KEY); INSERT INTO users VALUES('alice'),('bob');
     CREATE TABLE trips(id TEXT PRIMARY KEY); INSERT INTO trips VALUES('trip'),('other');
-    CREATE TABLE place_photos(id TEXT PRIMARY KEY);`);
+    CREATE TABLE place_photos(id TEXT PRIMARY KEY,trip_id TEXT NOT NULL,
+      width INTEGER DEFAULT 1,height INTEGER DEFAULT 1,mime TEXT DEFAULT 'image/webp',duration REAL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
   migrateGooglePhotos(db);
+  migratePlacePhotoDates(db);
   let clock = Date.now();
   let selection = false;
   let membership = true;
@@ -75,7 +83,8 @@ function fixture() {
         .get(trip, id);
       if (exists) return false;
       saves.push(id);
-      db.prepare('INSERT INTO place_photo_imports VALUES(?,?,NULL)').run(trip, id);
+      db.prepare('INSERT INTO place_photos(id,trip_id) VALUES(?,?)').run(id, trip);
+      db.prepare('INSERT INTO place_photo_imports VALUES(?,?,?)').run(trip, id, id);
       return true;
     }
   });
@@ -119,6 +128,7 @@ function fixture() {
 function photo(id: string) {
   return {
     id,
+    createTime: undefined as string | undefined,
     type: 'PHOTO',
     mediaFile: {
       baseUrl: `https://lh3.googleusercontent.com/${id}`,
@@ -379,6 +389,61 @@ test('each processed video is published without waiting for the next video in th
     assert.equal(second.status, 'done');
     assert.equal(second.added, 2);
     assert.deepEqual(f.saves, ['clip-a', 'clip-b']);
+  } finally {
+    f.db.close();
+  }
+});
+
+test('createTime sorts mixed media chronologically and Reload backfills dates without downloading duplicates', async () => {
+  const f = fixture();
+  try {
+    // An older schema can be migrated repeatedly without changing existing dates.
+    migratePlacePhotoDates(f.db);
+    const newer = { ...photo('newer'), createTime: '2026-11-20T12:00:00+02:00' };
+    const older = { ...photo('older-video'), type: 'VIDEO' };
+    const undated = photo('undated');
+    f.pages([[newer, older, undated]]);
+    const { start } = await f.authorize();
+    f.select();
+    f.advance();
+    await f.service.poll(start.jobId, 'alice', 'trip');
+    assert.equal((await f.service.poll(start.jobId, 'alice', 'trip')).status, 'done');
+    f.db.prepare("UPDATE place_photos SET created_at='2026-11-21 00:00:00'").run();
+    assert.deepEqual(
+      orderedPlacePhotos(f.db, 'trip').map((p) => p.id),
+      ['newer', 'older-video', 'undated']
+    );
+
+    f.pages([
+      [
+        { ...newer, createTime: 'invalid' },
+        { ...older, createTime: '2026-11-20T09:59:59.999Z' },
+        undated
+      ]
+    ]);
+    const reload = await f.authorize();
+    f.advance();
+    const result = await f.service.poll(reload.start.jobId, 'alice', 'trip');
+    assert.equal(result.status, 'done');
+    assert.equal(result.added, 0);
+    assert.equal(result.skipped, 3);
+    assert.equal(f.downloads.length, 3);
+    assert.deepEqual(
+      orderedPlacePhotos(f.db, 'trip').map((p) => p.id),
+      ['older-video', 'newer', 'undated']
+    );
+    assert.equal(orderedPlacePhotos(f.db, 'other').length, 0);
+    // Missing/invalid metadata never erases a known timestamp, and updates are trip scoped.
+    setPlacePhotoCreateTime(f.db, 'other', 'newer', '2000-01-01T00:00:00Z');
+    setPlacePhotoCreateTime(f.db, 'trip', 'newer', undefined);
+    assert.equal(
+      (
+        f.db.prepare("SELECT media_created_at FROM place_photos WHERE id='newer'").get() as {
+          media_created_at: number;
+        }
+      ).media_created_at,
+      Date.parse(newer.createTime)
+    );
   } finally {
     f.db.close();
   }
