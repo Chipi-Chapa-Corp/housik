@@ -426,6 +426,10 @@
             {#each expenseRows as row}
               {@const expense = row.expense}
               {@const receipt = data.receipts.find((receipt) => receipt.id === row.receiptId)}
+              {@const rentShare =
+                expense.kind === 'rent'
+                  ? (allocate(expense, data.members, data.tags).get(data.session.member_id!) ?? 0)
+                  : 0}
               <button
                 class="expense-row"
                 onclick={() => (row.receiptId ? openReceipt(row.receiptId) : viewExpense(expense))}
@@ -452,12 +456,10 @@
                         >{/if}{#if !row.receiptId}{#each visibleTags(expense) as tag}<span
                             class="tag-pill">{tag.name}</span
                           >{/each}{#if expense.kind === 'rent'}<span
-                            >{data.trip.nights} nights · {money(
-                              Math.round(expense.amount / data.trip.nights)
-                            )} / night</span
+                            >{money(rentShare)} ({money(Math.round(rentShare / data.trip.nights))} / night)</span
                           >{:else if !expense.tag_ids?.length}{expense.note ||
-                            ''}{/if}{#if expense.choices.length}<span class="custom-share"
-                            >Custom split</span
+                            ''}{/if}{#if expense.kind !== 'rent' && expense.choices.length}<span
+                            class="custom-share">Custom split</span
                           >{/if}{/if}</span
                     ></span
                   ></span

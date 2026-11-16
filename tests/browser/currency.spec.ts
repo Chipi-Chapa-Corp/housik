@@ -41,10 +41,25 @@ test('EUR amounts stay editable in EUR while ledger totals use CZK', async ({ pa
   let row = page.locator('.expense-row').filter({ hasText: 'Euro stay' });
   await expect(row.locator('.expense-total')).toHaveText(/^92,25/);
   await expect(row.locator('.expense-meta .tag-pill')).toHaveText('Groceries');
-  await expect(row.locator('.expense-meta')).toContainText('3 nights · 30,75');
-  await expect(row.locator('.expense-meta')).toContainText('/ night');
+  await expect(row.locator('.expense-meta')).toContainText(/23,0[67]\sKč \(7,69\sKč \/ night\)/);
+  await expect(row.locator('.expense-meta')).not.toContainText('nights');
   await row.screenshot({ path: 'test-results/tagged-stay.png' });
   await row.click();
+  for (const [mode, total, amount] of [
+    ['full', '92,25', '30,75'],
+    ['exclude', '0,00', '0,00'],
+    ['default', '23,0[67]', '7,69']
+  ]) {
+    dialog = page.locator('dialog[open]');
+    await dialog.getByLabel('Participation').selectOption(mode);
+    await dialog.getByRole('button', { name: 'Update share' }).click();
+    await close(page);
+    await expect(row.locator('.expense-meta')).toContainText(
+      new RegExp(`${total}\\sKč \\(${amount}\\sKč / night\\)`)
+    );
+    await expect(row.locator('.custom-share')).toHaveCount(0);
+    await row.click();
+  }
   await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
   dialog = page.locator('dialog[open]');
   await expect(dialog.getByLabel('Per night · EUR', { exact: true })).toHaveValue('1.23');
