@@ -26,6 +26,8 @@ test('Settings connects Google Photos, Reload skips existing photos, cancellatio
   const directory = resolve(process.env.HOUSIK_TEST_DIR!);
   await context.route('https://accounts.google.com/**', async (route) => {
     const url = new URL(route.request().url());
+    expect(url.searchParams.get('prompt')).toBe('select_account');
+    expect(url.searchParams.has('login_hint')).toBe(false);
     expect(url.searchParams.get('scope')).toBe(
       'https://www.googleapis.com/auth/photospicker.mediaitems.readonly'
     );
@@ -38,7 +40,7 @@ test('Settings connects Google Photos, Reload skips existing photos, cancellatio
   await context.route('https://photos.google.com/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
-      body: '<button onclick="window.close()">Done</button>'
+      body: '<button onclick="setTimeout(() => window.close(), 100)">Done</button>'
     })
   );
   await page.getByRole('button', { name: 'Trip settings' }).click();
@@ -65,6 +67,7 @@ test('Settings connects Google Photos, Reload skips existing photos, cancellatio
   const reloadPopup = context.waitForEvent('page');
   await settings.getByRole('button', { name: 'Reload', exact: true }).click();
   const reopened = await reloadPopup;
+  await reopened.getByRole('link', { name: 'Allow Google Photos' }).click();
   await expect(reopened).toHaveURL(/photos.google.com\/picker\/fixture-session-2\/autoclose/);
   writeFileSync(join(directory, 'fixture-session-2.selected'), 'ready');
   await reopened.getByRole('button', { name: 'Done', exact: true }).click();
@@ -78,6 +81,7 @@ test('Settings connects Google Photos, Reload skips existing photos, cancellatio
   const pendingPopup = context.waitForEvent('page');
   await settings.getByRole('button', { name: 'Reload', exact: true }).click();
   const pending = await pendingPopup;
+  await pending.getByRole('link', { name: 'Allow Google Photos' }).click();
   await expect(pending).toHaveURL(/fixture-session-3/);
   const job = await page.evaluate(
     () =>
@@ -119,6 +123,7 @@ test('Settings connects Google Photos, Reload skips existing photos, cancellatio
   const removedPopup = context.waitForEvent('page');
   await settings.getByRole('button', { name: 'Reload', exact: true }).click();
   const removed = await removedPopup;
+  await removed.getByRole('link', { name: 'Allow Google Photos' }).click();
   await expect(removed).toHaveURL(/fixture-session-4/);
   // Reloading the app resumes the same pending picker selection.
   await page.reload();

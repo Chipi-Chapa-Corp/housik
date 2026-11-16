@@ -6,7 +6,6 @@ const api = 'https://photospicker.googleapis.com/v1';
 const tokenUrl = 'https://oauth2.googleapis.com/token';
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 export class GooglePhotosError extends Error {}
-type Connection = { access_token: string; refresh_token: string; expires_at: number };
 type Item = {
   id: string;
   type: string;
@@ -92,35 +91,7 @@ export function googlePhotosPicker(options: {
     return result as { access_token: string; expires_in: number; refresh_token?: string };
   }
   function connection(userId: string) {
-    return db
-      .prepare(
-        'SELECT access_token,refresh_token,expires_at FROM google_photos_connections WHERE user_id=?'
-      )
-      .get(userId) as Connection | undefined;
-  }
-  async function access(userId: string) {
-    const saved = connection(userId);
-    if (!saved) return null;
-    if (saved.expires_at > now() + 60_000) return saved.access_token;
-    if (!saved.refresh_token) return null;
-    try {
-      const result = await tokens({
-        grant_type: 'refresh_token',
-        refresh_token: saved.refresh_token
-      });
-      db.prepare(
-        'UPDATE google_photos_connections SET access_token=?,refresh_token=?,expires_at=? WHERE user_id=?'
-      ).run(
-        result.access_token,
-        result.refresh_token || saved.refresh_token,
-        now() + result.expires_in * 1000,
-        userId
-      );
-      return result.access_token;
-    } catch {
-      db.prepare('DELETE FROM google_photos_connections WHERE user_id=?').run(userId);
-      return null;
-    }
+    return db.prepare('SELECT 1 FROM google_photos_connections WHERE user_id=?').get(userId);
   }
   function jobFor(id: string, userId: string, tripId: string) {
     const job = db
@@ -336,14 +307,7 @@ export function googlePhotosPicker(options: {
       db.prepare(
         "INSERT INTO google_photos_jobs(id,user_id,trip_id,status,expires_at) VALUES(?,?,?,'connecting',?)"
       ).run(jobId, userId, tripId, now() + 10 * 60_000);
-      const accessToken = await access(userId);
-      if (accessToken) {
-        try {
-          return { jobId, url: await session(jobId, accessToken), browser: null };
-        } catch {
-          db.prepare('DELETE FROM google_photos_connections WHERE user_id=?').run(userId);
-        }
-      }
+      // Always let the user choose an account before creating a picker session.
       const state = randomBytes(32).toString('base64url');
       const browser = randomBytes(32).toString('base64url');
       const verifier = randomBytes(48).toString('base64url');
@@ -361,8 +325,8 @@ export function googlePhotosPicker(options: {
         redirect_uri: redirectUri,
         response_type: 'code',
         scope,
-        access_type: 'offline',
-        prompt: 'consent',
+        access_type: 'online',
+        prompt: 'select_account',
         state,
         code_challenge: createHash('sha256').update(verifier).digest('base64url'),
         code_challenge_method: 'S256'
@@ -404,15 +368,11 @@ export function googlePhotosPicker(options: {
           redirect_uri: pending.redirect_uri,
           code_verifier: pending.verifier
         });
-        // Never reuse a previous account's refresh token when switching accounts.
+        // Only remember that this user connected. Picker access belongs to the
+        // current job; Reload must never silently reuse a previous account.
         db.prepare(
-          `INSERT INTO google_photos_connections VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET access_token=excluded.access_token,refresh_token=excluded.refresh_token,expires_at=excluded.expires_at`
-        ).run(
-          userId,
-          result.access_token,
-          result.refresh_token || '',
-          now() + result.expires_in * 1000
-        );
+          `INSERT INTO google_photos_connections VALUES(?,'','',0) ON CONFLICT(user_id) DO UPDATE SET access_token='',refresh_token='',expires_at=0`
+        ).run(userId);
         return await session(pending.job_id, result.access_token);
       } catch (cause) {
         db.prepare("UPDATE google_photos_jobs SET status='error',error=? WHERE id=?").run(

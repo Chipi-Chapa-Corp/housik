@@ -158,11 +158,6 @@
     </button>
     {#if running}<button type="button" class="text-btn" onclick={cancel}>Cancel</button>{/if}
   </div>
-  {#if !configured}
-    <p class="muted">Google Photos is not configured.</p>
-  {:else}
-    <p class="muted">Selected photos are saved to this trip for all participants.</p>
-  {/if}
   {#if status}<p role="status">{status}</p>{/if}
   {#if problem}<p class="form-error" role="alert">{problem}</p>{/if}
 </div>

@@ -25,5 +25,7 @@ export function migrateGooglePhotos(db: Database.Database) {
       photo_id TEXT REFERENCES place_photos(id) ON DELETE SET NULL,
       PRIMARY KEY(trip_id, source_id)
     );
+    UPDATE google_photos_connections SET access_token='',refresh_token='',expires_at=0
+      WHERE access_token!='' OR refresh_token!='' OR expires_at!=0;
   `);
 }

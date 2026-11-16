@@ -14,7 +14,6 @@ function fixture() {
   let clock = Date.now();
   let selection = false;
   let membership = true;
-  let refreshFails = false;
   let badDownload = '';
   let pages = [
     [photo('one'), photo('two'), { ...photo('video'), type: 'VIDEO' }],
@@ -27,8 +26,6 @@ function fixture() {
     const url = String(input);
     calls.push({ url, init });
     if (url.endsWith('/token')) {
-      if (refreshFails && String(init?.body).includes('refresh_token'))
-        return new Response('{}', { status: 400 });
       return Response.json({
         access_token: 'private-access',
         refresh_token: 'private-refresh',
@@ -110,9 +107,6 @@ function fixture() {
     },
     select: () => {
       selection = true;
-    },
-    refreshFails: () => {
-      refreshFails = true;
     },
     failDownload: (id: string) => {
       badDownload = id;
@@ -201,8 +195,15 @@ test('picker imports all pages in resumable batches, honors poll intervals and s
     );
     assert(!JSON.stringify(p).includes('private-access'));
     const reload = await f.service.start('alice', 'trip', 'http://localhost/callback');
-    assert.equal(reload.browser, null);
-    assert.match(reload.url, /photos.google.com/);
+    assert(reload.browser);
+    assert.equal(new URL(reload.url).searchParams.get('prompt'), 'select_account');
+    await f.service.callback(
+      'alice',
+      new URL(reload.url).searchParams.get('state')!,
+      reload.browser,
+      'code',
+      false
+    );
     f.advance();
     await f.service.poll(reload.jobId, 'alice', 'trip');
     p = await f.service.poll(reload.jobId, 'alice', 'trip');
@@ -267,7 +268,7 @@ test('failed images can be retried, and untrusted media addresses never receive 
     assert.equal(p.failed, 2);
     assert(!f.calls.some((c) => c.url.includes('example.com')));
     f.failDownload('');
-    const next = await f.service.start('alice', 'trip', 'http://localhost/callback');
+    const { start: next } = await f.authorize();
     f.advance();
     p = await f.service.poll(next.jobId, 'alice', 'trip');
     assert.equal(p.added, 1);
@@ -279,19 +280,26 @@ test('failed images can be retried, and untrusted media addresses never receive 
   }
 });
 
-test('expired Google credentials refresh server-side and revoked access asks for consent again', async () => {
+test('Reload always asks for an account, including with a previously connected account', async () => {
   const f = fixture();
   try {
     await f.authorize();
-    f.advance(61 * 60_000);
-    const refreshed = await f.service.start('alice', 'trip', 'http://localhost/callback');
-    assert.equal(refreshed.browser, null);
-    assert(f.calls.some((c) => String(c.init?.body).includes('grant_type=refresh_token')));
-    f.advance(61 * 60_000);
-    f.refreshFails();
-    const reauthorize = await f.service.start('alice', 'trip', 'http://localhost/callback');
-    assert(reauthorize.browser);
-    assert.match(reauthorize.url, /accounts.google.com/);
+    const before = f.calls.length;
+    for (let count = 0; count < 2; count++) {
+      const start = await f.service.start('alice', 'trip', 'http://localhost/callback');
+      const url = new URL(start.url);
+      assert.equal(url.origin, 'https://accounts.google.com');
+      assert.equal(url.searchParams.get('prompt'), 'select_account');
+      assert.equal(url.searchParams.get('access_type'), 'online');
+      assert.equal(url.searchParams.has('login_hint'), false);
+      assert(start.browser);
+      assert.equal(f.calls.length, before);
+      f.advance(61 * 60_000);
+    }
+    assert.deepEqual(
+      f.db.prepare('SELECT access_token,refresh_token FROM google_photos_connections').get(),
+      { access_token: '', refresh_token: '' }
+    );
   } finally {
     f.db.close();
   }
