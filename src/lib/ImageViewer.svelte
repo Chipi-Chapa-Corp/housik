@@ -22,6 +22,11 @@
     zoomable?: boolean;
   } = $props();
   let dialog: HTMLDialogElement;
+  let video = $state<HTMLVideoElement>();
+  $effect(() => {
+    const active = video;
+    return () => active?.pause();
+  });
   let zoomed = $state(false);
   let zoomSource = '';
   let viewportWidth = $state(1024),
@@ -75,7 +80,18 @@
   function pointerDown(event: PointerEvent) {
     if (event.pointerType !== 'touch') return;
     pointers.add(event.pointerId);
-    if (zoomed || pointers.size !== 1 || !(event.target as Element).closest('.media-image')) {
+    if (
+      zoomed ||
+      pointers.size !== 1 ||
+      !(event.target as Element).closest('.media-image, .media-video')
+    ) {
+      touch = null;
+      return;
+    }
+    if (
+      event.target instanceof HTMLVideoElement &&
+      event.clientY > event.target.getBoundingClientRect().bottom - 60
+    ) {
       touch = null;
       return;
     }
@@ -133,7 +149,8 @@
       Math.hypot(event.clientX - swipeClick.x, event.clientY - swipeClick.y) < 12
     )
       return;
-    if (!(event.target as Element).closest('.media-image, .media-pdf, button')) dismiss();
+    if (!(event.target as Element).closest('.media-image, .media-video, .media-pdf, button'))
+      dismiss();
   }}
   onkeydown={(event) => {
     if (event.key === 'Escape') {
@@ -141,6 +158,7 @@
       event.stopPropagation();
       dismiss();
     } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      if ((event.target as Element).closest('.media-video')) return;
       event.preventDefault();
       event.stopPropagation();
       move(event.key === 'ArrowRight' ? 1 : -1);
@@ -163,6 +181,25 @@
         {#key current.src}
           {#if current.mime === 'application/pdf'}
             <iframe class="media-pdf" src={current.src} title={current.name}></iframe>
+          {:else if current.mime.startsWith('video/')}
+            <!-- svelte-ignore a11y_media_has_caption (User videos may not include caption tracks.) -->
+            <video
+              bind:this={video}
+              class="media-video"
+              src={current.src}
+              poster={current.poster}
+              controls
+              playsinline
+              preload="metadata"
+              aria-label={current.name}
+              onloadedmetadata={(event) => {
+                loaded = {
+                  src: event.currentTarget.getAttribute('src') || '',
+                  width: event.currentTarget.videoWidth,
+                  height: event.currentTarget.videoHeight
+                };
+              }}
+            ></video>
           {:else}
             <img
               class="media-image"
@@ -173,7 +210,7 @@
               onload={(event) => {
                 const image = event.currentTarget as HTMLImageElement;
                 loaded = {
-                  src: current.src,
+                  src: image.getAttribute('src') || '',
                   width: image.naturalWidth,
                   height: image.naturalHeight
                 };
@@ -263,13 +300,15 @@
     width: 100%;
   }
   .media-image,
+  .media-video,
   .media-pdf {
     display: block;
     width: 100%;
     height: 100%;
     border: 0;
   }
-  .media-image {
+  .media-image,
+  .media-video {
     object-fit: contain;
     user-select: none;
   }

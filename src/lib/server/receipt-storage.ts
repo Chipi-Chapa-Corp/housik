@@ -4,7 +4,7 @@ import { resolve, join } from 'node:path';
 import { maxReceiptBytes } from '../receipts';
 import { checkWritableDirectory } from './storage';
 
-export function receiptStorage(directory: string) {
+export function receiptStorage(directory: string, maxBytes = maxReceiptBytes) {
   const root = resolve(directory);
   const path = (id: string) => {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
@@ -16,7 +16,7 @@ export function receiptStorage(directory: string) {
       checkWritableDirectory(root, true);
     },
     async put(id: string, content: Buffer) {
-      if (!content.length || content.length > maxReceiptBytes)
+      if (!content.length || content.length > maxBytes)
         throw new Error('Invalid receipt file size.');
       const file = await open(
         path(id),
@@ -32,11 +32,20 @@ export function receiptStorage(directory: string) {
         await file.close();
       }
     },
-    async read(id: string): Promise<Buffer> {
+    async open(id: string) {
       const file = await open(path(id), constants.O_RDONLY | constants.O_NOFOLLOW);
       try {
         const stat = await file.stat();
-        if (!stat.isFile() || stat.size > maxReceiptBytes) throw new Error('Invalid receipt file.');
+        if (!stat.isFile() || stat.size > maxBytes) throw new Error('Invalid receipt file.');
+        return file;
+      } catch (cause) {
+        await file.close();
+        throw cause;
+      }
+    },
+    async read(id: string): Promise<Buffer> {
+      const file = await this.open(id);
+      try {
         return await file.readFile();
       } finally {
         await file.close();

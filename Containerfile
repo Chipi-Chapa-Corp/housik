@@ -15,12 +15,16 @@ RUN npm run build && npm prune --omit=dev
 
 FROM docker.io/library/node:22-bookworm-slim AS runtime
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
     DATABASE_PATH=/app/data/housik.sqlite \
     UPLOAD_DIR=/app/data/receipts \
-    BODY_SIZE_LIMIT=12M
+    BODY_SIZE_LIMIT=256M
 
 WORKDIR /app
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./

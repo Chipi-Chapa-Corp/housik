@@ -130,7 +130,7 @@ All trips use CZK. UI text uses 1rem throughout. Amounts have no plus/minus sign
 
 ## Google Photos
 
-Trip settings has Google Photos → Connect. Sign in to Google, search for your album in Google's picker, select photos, and finish with Done. Selected photos are saved into the trip's existing gallery for all participants. Reload opens Google’s account chooser followed by a fresh picker and skips photos already imported into that trip using Google's persistent media IDs, including photos subsequently removed from Housik. Uploaded photos are preserved. Videos are skipped; failed photos can be retried. Imports run in small batches while the trip is open; reloading the same trip in the same browser tab resumes its pending import. Cancel stops subsequent batches; photos already saved remain.
+Trip settings has Google Photos → Connect. Sign in to Google, search for your album in Google's picker, select photos, and finish with Done. Selected photos are saved into the trip's existing gallery for all participants. Reload opens Google’s account chooser followed by a fresh picker and skips photos already imported into that trip using Google's persistent media IDs, including photos subsequently removed from Housik. Uploaded photos are preserved. Videos are imported as playable MP4s with poster thumbnails; failed files can be retried. Imports run in small batches while the trip is open and the gallery refreshes after each saved batch; reloading the same trip in the same browser tab resumes its pending import. Cancel stops subsequent batches; photos already saved remain.
 
 Setup (once per deployment):
 
@@ -163,7 +163,7 @@ Each imported receipt keeps its original file, creates a tag named `username N` 
 
 `DATABASE_PATH` defaults to `./data/housik.sqlite`; `UPLOAD_DIR` defaults to `./data/receipts`. Originals remain in private filesystem storage under `UPLOAD_DIR`, with UUID filenames and no public static route. The server checks trip membership before serving them with private/no-store headers. Abandoned drafts are removed after 24 hours during subsequent uploads. SQLite enables foreign keys and WAL. Back up the database using SQLite's backup API or stop the app before copying the database and receipt directory together. The schema is created automatically for this initial version.
 
-Place photos are stored beside the database in `place-photos/full` and `place-photos/thumbnails`; include both directories in backups. Uploads accept JPEG, PNG, WebP, AVIF and TIFF images up to 10 MB each, sent individually so multi-photo selections stay within the request size limit. The server decodes images, corrects EXIF orientation, strips metadata, and saves WebP versions up to 2400px plus 960px previews. Photos and their dimensions persist per trip; both image sizes require trip membership and use private/no-store responses.
+Place photos are stored beside the database in `place-photos/full` and `place-photos/thumbnails`; include both directories in backups. Uploads accept JPEG, PNG, WebP, AVIF and TIFF images up to 10 MB each, plus MP4/MOV/WebM videos up to 250 MB and 10 minutes each, sent individually so multi-photo selections stay within the request size limit. The server decodes images, corrects EXIF orientation, strips metadata, and saves WebP versions up to 2400px plus 960px previews. Videos are normalized with FFmpeg to H.264/AAC MP4 up to 1920px, with fast-start metadata, seekable authenticated streaming and WebP posters. Local development needs FFmpeg and FFprobe with an H.264 encoder; the container installs them. Photos, videos and their dimensions persist per trip; both image sizes require trip membership and use private/no-store responses.
 
 Passwords use scrypt with random salts. Browser cookies are HTTP-only, SameSite=Lax, and secure on HTTPS. Sessions have no server-side expiry; the persistent cookie renews on use for 400 days, subject to browser retention limits. Signing out revokes that session. Passwords and session tokens are never stored in plaintext. There is no password recovery flow in this initial version.
 
@@ -174,7 +174,7 @@ npm run build
 ORIGIN=https://your-host.example npm start
 ```
 
-Run behind HTTPS with a persistent writable data directory. Set `ORIGIN` to the external URL so form origin checks work behind a proxy. `.env.example` includes `BODY_SIZE_LIMIT=12M` for receipt uploads. Deploy one app instance per SQLite database on a local filesystem.
+Run behind HTTPS with a persistent writable data directory. Set `ORIGIN` to the external URL so form origin checks work behind a proxy. `.env.example` includes `BODY_SIZE_LIMIT=256M` for media uploads. Deploy one app instance per SQLite database on a local filesystem.
 
 ## Checks
 

@@ -43,6 +43,7 @@
     wake = undefined;
   }
   async function poll(id: string, run: number) {
+    let shown = 0;
     try {
       while (run === generation) {
         const response = await fetch(`${endpoint()}/${encodeURIComponent(id)}`, { method: 'POST' });
@@ -52,7 +53,7 @@
           throw new Error(result.error || 'Could not check Google Photos. Reload to try again.');
         status =
           result.status === 'importing'
-            ? `Importing photos (${result.processed}/${result.total})`
+            ? `Importing (${result.processed}/${result.total})`
             : result.status === 'connecting'
               ? 'Waiting for Google sign-in'
               : 'Select photos in Google Photos';
@@ -66,9 +67,13 @@
           status = `${result.added} added · ${result.skipped} skipped${result.failed ? ` · ${result.failed} failed` : ''}`;
           problem =
             result.error ||
-            (result.failed ? 'Some photos could not be imported. Reload to retry them.' : '');
+            (result.failed ? 'Some files could not be imported. Reload to retry them.' : '');
           await onImported(result.added);
           return;
+        }
+        if (result.status === 'importing' && result.added > shown) {
+          shown = result.added;
+          await onImported(0);
         }
         await pause(Math.min(60_000, Math.max(1000, result.retryAfter || 1000)));
       }

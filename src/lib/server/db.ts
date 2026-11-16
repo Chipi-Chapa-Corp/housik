@@ -103,7 +103,8 @@ db.transaction(() => {
       input_nightly: 'INTEGER NOT NULL DEFAULT 0',
       share_explicit: 'INTEGER NOT NULL DEFAULT 0'
     },
-    choices: { input_extra: 'INTEGER', input_currency: "TEXT NOT NULL DEFAULT 'CZK'" }
+    choices: { input_extra: 'INTEGER', input_currency: "TEXT NOT NULL DEFAULT 'CZK'" },
+    place_photos: { mime: "TEXT NOT NULL DEFAULT 'image/webp'", duration: 'REAL' }
   })) {
     const existing = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     for (const [name, definition] of Object.entries(columns)) {
@@ -188,7 +189,9 @@ export function tripData(tripId: string) {
     created: string;
   }[];
   const placePhotos = db
-    .prepare('SELECT id,width,height FROM place_photos WHERE trip_id=? ORDER BY rowid')
-    .all(tripId) as { id: string; width: number; height: number }[];
+    .prepare(
+      'SELECT id,width,height,mime,duration FROM place_photos WHERE trip_id=? ORDER BY rowid'
+    )
+    .all(tripId) as import('#lib/types.ts').PlacePhoto[];
   return { trip, members, tags, expenses, payments, receipts, placePhotos };
 }

@@ -3477,5 +3477,6 @@ nav button.active {
 }
 
 body:has(dialog.image-viewer[open]) .toast[popover] {
-  bottom: 84px;
+  top: 16px;
+  bottom: auto;
 }

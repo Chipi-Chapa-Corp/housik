@@ -45,10 +45,17 @@ export type Balance = {
 };
 export type Transfer = { from: string; to: string; amount: number };
 export type ReceiptItem = { title: string; amount: number };
-export type PlacePhoto = { id: string; width: number; height: number };
+export type PlacePhoto = {
+  id: string;
+  width: number;
+  height: number;
+  mime?: string;
+  duration?: number | null;
+};
 export type ViewerItem = {
   src: string;
   mime: string;
+  poster?: string;
   name: string;
   width?: number;
   height?: number;

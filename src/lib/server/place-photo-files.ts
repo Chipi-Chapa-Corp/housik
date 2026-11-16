@@ -1,8 +1,9 @@
 import sharp from 'sharp';
 import { join } from 'node:path';
 import { receiptStorage } from './receipt-storage';
+import { maxPlacePhotoBytes, maxPlaceVideoBytes } from '../place-media';
+export { maxPlacePhotoBytes } from '../place-media';
 
-export const maxPlacePhotoBytes = 10 * 1024 * 1024;
 export class PlacePhotoError extends Error {}
 
 export async function preparePlacePhoto(input: Buffer) {
@@ -30,7 +31,7 @@ export async function preparePlacePhoto(input: Buffer) {
 }
 
 export function placePhotoStorage(directory: string) {
-  const full = receiptStorage(join(directory, 'full'));
+  const full = receiptStorage(join(directory, 'full'), maxPlaceVideoBytes);
   const thumbnails = receiptStorage(join(directory, 'thumbnails'));
   return {
     check() {
@@ -46,6 +47,7 @@ export function placePhotoStorage(directory: string) {
         throw error;
       }
     },
+    open: (id: string) => full.open(id),
     read(id: string, thumbnail = false) {
       return (thumbnail ? thumbnails : full).read(id);
     },

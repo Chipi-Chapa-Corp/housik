@@ -1,6 +1,9 @@
 import * as env from '$app/env/private';
 import { dirname, join, resolve } from 'node:path';
 import { db, id } from './db';
+import type { PlacePhoto } from '../types';
+import { isPlaceVideo, maxPlaceVideoBytes } from '../place-media';
+import { preparePlaceVideo, checkVideoTools } from './place-video-files';
 import {
   placePhotoStorage,
   preparePlacePhoto,
@@ -11,22 +14,22 @@ import {
 const files = placePhotoStorage(
   join(dirname(resolve(env.DATABASE_PATH || './data/housik.sqlite')), 'place-photos')
 );
-export const checkPlacePhotoStorage = () => files.check();
+export const checkPlacePhotoStorage = () => {
+  files.check();
+  checkVideoTools();
+};
 
-export function savePlacePhoto(
-  tripId: string,
-  file: File
-): Promise<{ id: string; width: number; height: number }>;
+export function savePlacePhoto(tripId: string, file: File): Promise<PlacePhoto>;
 export function savePlacePhoto(
   tripId: string,
   file: File,
   sourceId: string
-): Promise<{ id: string; width: number; height: number } | null>;
+): Promise<PlacePhoto | null>;
 export async function savePlacePhoto(
   tripId: string,
   file: File,
   sourceId?: string
-): Promise<{ id: string; width: number; height: number } | null> {
+): Promise<PlacePhoto | null> {
   if (
     sourceId &&
     db
@@ -34,9 +37,15 @@ export async function savePlacePhoto(
       .get(tripId, sourceId)
   )
     return null;
-  if (!file.size || file.size > maxPlacePhotoBytes)
-    throw new PlacePhotoError('Choose photos up to 10 MB each.');
-  const photo = await preparePlacePhoto(Buffer.from(await file.arrayBuffer()));
+  const video = isPlaceVideo(file);
+  if (!file.size || file.size > (video ? maxPlaceVideoBytes : maxPlacePhotoBytes))
+    throw new PlacePhotoError(
+      video ? 'Choose videos up to 250 MB each.' : 'Choose photos up to 10 MB each.'
+    );
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const photo = video
+    ? await preparePlaceVideo(bytes)
+    : { ...(await preparePlacePhoto(bytes)), mime: 'image/webp', duration: null };
   const photoId = id();
   await files.put(photoId, photo);
   try {
@@ -48,12 +57,9 @@ export async function savePlacePhoto(
           .get(tripId, sourceId)
       )
         return false;
-      db.prepare('INSERT INTO place_photos(id,trip_id,width,height) VALUES(?,?,?,?)').run(
-        photoId,
-        tripId,
-        photo.width,
-        photo.height
-      );
+      db.prepare(
+        'INSERT INTO place_photos(id,trip_id,width,height,mime,duration) VALUES(?,?,?,?,?,?)'
+      ).run(photoId, tripId, photo.width, photo.height, photo.mime, photo.duration);
       if (sourceId)
         db.prepare('INSERT INTO place_photo_imports(trip_id,source_id,photo_id) VALUES(?,?,?)').run(
           tripId,
@@ -70,8 +76,16 @@ export async function savePlacePhoto(
     await files.remove(photoId);
     throw error;
   }
-  return { id: photoId, width: photo.width, height: photo.height };
+  return {
+    id: photoId,
+    width: photo.width,
+    height: photo.height,
+    mime: photo.mime,
+    duration: photo.duration
+  };
 }
+
+export const openPlacePhoto = (photoId: string) => files.open(photoId);
 
 export const readPlacePhoto = (photoId: string, thumbnail: boolean) =>
   files.read(photoId, thumbnail);

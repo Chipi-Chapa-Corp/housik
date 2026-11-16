@@ -181,10 +181,15 @@ test('picker imports all pages in resumable batches, honors poll intervals and s
     assert.equal(concurrent[0].status, 'importing');
     p = await f.service.poll(start.jobId, 'alice', 'trip');
     assert.equal(p.status, 'done');
-    assert.equal(p.added, 3);
-    assert.equal(p.skipped, 1);
-    assert.deepEqual(f.saves, ['one', 'two', 'three']);
-    assert(f.downloads.every((url) => url.endsWith('=w2400-h2400')));
+    assert.equal(p.added, 4);
+    assert.equal(p.skipped, 0);
+    assert.deepEqual(f.saves, ['one', 'two', 'video', 'three']);
+    assert(
+      f.downloads
+        .filter((url) => !url.includes('/video'))
+        .every((url) => url.endsWith('=w2400-h2400'))
+    );
+    assert(f.downloads.some((url) => url.endsWith('/video=dv')));
     assert(
       f.calls
         .filter((c) => c.url.includes('googleusercontent'))
@@ -209,7 +214,7 @@ test('picker imports all pages in resumable batches, honors poll intervals and s
     p = await f.service.poll(reload.jobId, 'alice', 'trip');
     assert.equal(p.added, 0);
     assert.equal(p.skipped, 4);
-    assert.equal(f.downloads.length, 3);
+    assert.equal(f.downloads.length, 4);
     assert.equal(
       (
         f.db

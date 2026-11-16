@@ -46,6 +46,7 @@
   import { inputCurrency, toCzk } from '#lib/currency.ts';
   import type { Expense, Tag, Payment } from '#lib/types.ts';
   import { allocate } from '#lib/money.ts';
+  import { isPlaceVideo, maxPlaceVideoBytes, maxPlacePhotoBytes } from '#lib/place-media.ts';
   import { departureDate } from '#lib/dates.ts';
   import type { PageData } from '../routes/trip/[id]/$types';
   let { data }: { data: Extract<PageData, { access: 'member' }> } = $props();
@@ -98,9 +99,14 @@
       lastError = '';
     try {
       for (const [index, file] of files.entries()) {
-        photoProgress = `Adding photos (${index + 1}/${files.length})`;
+        photoProgress = `Adding (${index + 1}/${files.length})`;
         try {
-          if (file.size > 10 * 1024 * 1024) throw new Error('Choose photos up to 10 MB each.');
+          if (file.size > (isPlaceVideo(file) ? maxPlaceVideoBytes : maxPlacePhotoBytes))
+            throw new Error(
+              isPlaceVideo(file)
+                ? 'Choose videos up to 250 MB each.'
+                : 'Choose photos up to 10 MB each.'
+            );
           const form = new FormData();
           form.set('file', file);
           const response = await fetch(`/trip/${tripId}/photos`, {
@@ -118,11 +124,10 @@
       }
       if (saved) {
         await refreshAll();
-        notice = `${saved} photo${saved === 1 ? '' : 's'} added`;
+        notice = `${saved} added`;
         setTimeout(() => (notice = ''), 3000);
       }
-      if (failed)
-        photoError = `${failed} photo${failed === 1 ? '' : 's'} couldn't be added. ${lastError}`;
+      if (failed) photoError = `${failed} couldn't be added. ${lastError}`;
     } catch {
       photoError = 'Photos saved. Reload to view them.';
     } finally {
@@ -524,7 +529,7 @@
           tripId={data.trip.id}
           onViewerChange={(open) => (placePhotoViewer = open)}
           onRemoved={() => {
-            notice = 'Photo removed';
+            notice = 'Removed';
             setTimeout(() => (notice = ''), 3000);
           }}
         />
@@ -805,7 +810,7 @@
 <input
   bind:this={placePhotoInput}
   type="file"
-  accept="image/jpeg,image/png,image/webp,image/avif,image/tiff"
+  accept="image/jpeg,image/png,image/webp,image/avif,image/tiff,video/mp4,video/quicktime,video/webm,.mov,.mp4,.webm"
   multiple
   hidden
   aria-label="Place photos"
@@ -1202,7 +1207,7 @@
       onImported={async (added) => {
         await refreshAll();
         if (added) {
-          notice = `${added} photo${added === 1 ? '' : 's'} added`;
+          notice = `${added} added`;
           setTimeout(() => (notice = ''), 3000);
         }
       }}

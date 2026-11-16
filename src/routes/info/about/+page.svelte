@@ -14,8 +14,8 @@
 <p>
   Google Photos is optional. When you connect an account, Google’s picker lets you choose photos to
   import into a trip. Copies are saved on Housik’s server and can be viewed by the trip’s
-  participants. Reload lets you choose an account and select more photos; photos already imported
-  into that trip are skipped.
+  participants. Reload lets you choose an account and select more photos and videos; photos already
+  imported into that trip are skipped.
 </p>
 <p>
   Housik requests access only to the photos you select. It does not browse your Google Photos

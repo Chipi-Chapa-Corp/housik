@@ -22,10 +22,11 @@
   contacts or email.
 </p>
 <p>
-  Selected photos are downloaded to Housik’s server, resized and stored with previews for the trip
-  gallery. Orientation is corrected and embedded metadata such as GPS coordinates is removed from
-  the stored images. Persistent Google media identifiers are retained per trip to avoid importing
-  the same photos again. Imported copies are visible to trip participants.
+  Selected photos and videos are downloaded to Housik’s server, resized and stored with previews for
+  the trip gallery. Orientation is corrected and embedded metadata such as GPS coordinates is
+  removed from the stored images. Videos are converted to MP4 with embedded metadata removed.
+  Persistent Google media identifiers are retained per trip to avoid importing the same photos
+  again. Imported copies are visible to trip participants.
 </p>
 <p>
   Temporary Google access credentials and selection-session data stay on the server. Credentials are

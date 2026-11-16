@@ -13,10 +13,14 @@ export const googlePhotos = googlePhotosPicker({
         'SELECT 1 FROM members m JOIN users u ON m.username=u.username COLLATE NOCASE WHERE m.trip_id=? AND u.id=?'
       )
       .get(tripId, userId),
-  save: async (tripId, bytes, sourceId) =>
+  save: async (tripId, bytes, sourceId, mime) =>
     !!(await savePlacePhoto(
       tripId,
-      new File([new Uint8Array(bytes)], 'google-photo.jpg'),
+      new File(
+        [new Uint8Array(bytes)],
+        mime.startsWith('video/') ? 'google-video.mp4' : 'google-photo.jpg',
+        { type: mime }
+      ),
       sourceId
     ))
 });

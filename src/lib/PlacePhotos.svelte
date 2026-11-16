@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { Play } from '@lucide/svelte';
   import ImageViewer from '#lib/ImageViewer.svelte';
   import { refreshAll } from '$app/navigation';
   import type { PlacePhoto } from '#lib/types.ts';
@@ -29,8 +30,9 @@
   const viewerItems = $derived(
     photos.map((photo, position) => ({
       src: source(photo),
-      mime: 'image/webp',
-      name: `Place photo ${position + 1}`,
+      mime: photo.mime || 'image/webp',
+      poster: source(photo, true),
+      name: `Place ${photo.mime?.startsWith('video/') ? 'video' : 'photo'} ${position + 1}`,
       width: photo.width,
       height: photo.height
     }))
@@ -102,7 +104,9 @@
           type="button"
           class="photo-tile"
           style:flex-grow={photo.width / photo.height / row.ratio}
-          aria-label={`Enlarge place photo ${position}`}
+          aria-label={photo.mime?.startsWith('video/')
+            ? `Play place video ${position}`
+            : `Enlarge place photo ${position}`}
           onclick={() => view(photo)}
         >
           <img
@@ -113,6 +117,9 @@
             loading="lazy"
             decoding="async"
           />
+          {#if photo.mime?.startsWith('video/')}<span class="video-play" aria-hidden="true"
+              ><Play size={22} fill="currentColor" /></span
+            >{/if}
         </button>
       {/each}
     </div>
@@ -157,6 +164,20 @@
     overflow: hidden;
     background: #edeff2;
     cursor: zoom-in;
+  }
+  .video-play {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #1c2029aa;
+    color: #fff;
+    pointer-events: none;
   }
   .photo-tile img {
     display: block;

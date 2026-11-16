@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import { maxPlacePhotoBytes, maxPlaceVideoBytes } from '../place-media';
 
 const scope = 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly';
 const api = 'https://photospicker.googleapis.com/v1';
@@ -9,7 +10,12 @@ export class GooglePhotosError extends Error {}
 type Item = {
   id: string;
   type: string;
-  mediaFile: { baseUrl: string; mimeType: string; filename: string };
+  mediaFile: {
+    baseUrl: string;
+    mimeType: string;
+    filename: string;
+    mediaFileMetadata?: { videoMetadata?: { processingStatus?: string } };
+  };
 };
 type Job = {
   id: string;
@@ -51,7 +57,7 @@ export function googlePhotosPicker(options: {
   clientId: string;
   clientSecret: string;
   canImport?: (userId: string, tripId: string) => boolean;
-  save: (tripId: string, bytes: Buffer, sourceId: string) => Promise<boolean>;
+  save: (tripId: string, bytes: Buffer, sourceId: string, mime: string) => Promise<boolean>;
   fetch?: typeof fetch;
   now?: () => number;
 }) {
@@ -73,6 +79,39 @@ export function googlePhotosPicker(options: {
           : 'Google Photos is unavailable. Try again.'
       );
     return response.json();
+  }
+  async function downloadMedia(input: string, token: string, video: boolean) {
+    const origin = new URL(input).origin;
+    const signal = AbortSignal.timeout(video ? 180_000 : 30_000);
+    let address = input;
+    for (let redirects = 0; redirects <= 5; redirects++) {
+      const url = new URL(address);
+      if (
+        url.protocol !== 'https:' ||
+        url.port ||
+        url.username ||
+        url.password ||
+        !(
+          /^lh[0-9]+\.googleusercontent\.com$/.test(url.hostname) ||
+          (video &&
+            (url.hostname === 'video-downloads.googleusercontent.com' ||
+              url.hostname.endsWith('.googlevideo.com')))
+        )
+      )
+        throw new GooglePhotosError('Invalid Google Photos media address.');
+      const response = await request(address, {
+        headers: url.origin === origin ? { Authorization: `Bearer ${token}` } : {},
+        redirect: 'manual',
+        signal
+      });
+      if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+      const next = response.headers.get('location');
+      await response.body?.cancel();
+      if (!next || redirects === 5)
+        throw new GooglePhotosError('Could not download Google Photos media.');
+      address = new URL(next, address).href;
+    }
+    throw new GooglePhotosError('Could not download Google Photos media.');
   }
   async function tokens(body: Record<string, string>) {
     const result = await providerJson(tokenUrl, {
@@ -224,12 +263,19 @@ export function googlePhotosPicker(options: {
       // Small resumable batches keep each request bounded and show useful progress.
       for (const item of items.slice(job.cursor, job.cursor + 3)) {
         let outcome: 'added' | 'skipped' | 'failed' = 'skipped';
-        if (item.type === 'PHOTO' && typeof item.id === 'string' && item.id) {
+        if (['PHOTO', 'VIDEO'].includes(item.type) && typeof item.id === 'string' && item.id) {
           const exists = db
             .prepare('SELECT 1 FROM place_photo_imports WHERE trip_id=? AND source_id=?')
             .get(tripId, item.id);
           if (!exists) {
             try {
+              const video = item.type === 'VIDEO';
+              const status = item.mediaFile.mediaFileMetadata?.videoMetadata?.processingStatus;
+              if (video && status && status !== 'READY')
+                throw new GooglePhotosError(
+                  'Google is still processing this video. Try importing it again later.'
+                );
+              const maxBytes = video ? maxPlaceVideoBytes : maxPlacePhotoBytes;
               const url = new URL(item.mediaFile.baseUrl);
               if (
                 url.protocol !== 'https:' ||
@@ -240,17 +286,19 @@ export function googlePhotosPicker(options: {
               )
                 throw new GooglePhotosError('Invalid Google Photos image address.');
               // Request a bounded rendition rather than a potentially enormous original.
-              const response = await request(`${url.href}=w2400-h2400`, {
-                headers: { Authorization: `Bearer ${job.access_token}` },
-                redirect: 'error',
-                signal: AbortSignal.timeout(30_000)
-              });
+              const response = await downloadMedia(
+                `${url.href}${video ? '=dv' : '=w2400-h2400'}`,
+                job.access_token,
+                video
+              );
               if (
                 !response.ok ||
                 !response.body ||
-                Number(response.headers.get('content-length')) > 10 * 1024 * 1024
+                Number(response.headers.get('content-length')) > maxBytes
               )
-                throw new GooglePhotosError('Could not download this photo.');
+                throw new GooglePhotosError(
+                  `Could not download this ${video ? 'video' : 'photo'} (HTTP ${response.status}).`
+                );
               const reader = response.body.getReader();
               const chunks: Uint8Array[] = [];
               let size = 0;
@@ -259,16 +307,29 @@ export function googlePhotosPicker(options: {
                   const { value, done } = await reader.read();
                   if (done) break;
                   size += value.byteLength;
-                  if (size > 10 * 1024 * 1024) throw new GooglePhotosError('Photo exceeds 10 MB.');
+                  if (size > maxBytes)
+                    throw new GooglePhotosError(
+                      video ? 'Video exceeds 250 MB.' : 'Photo exceeds 10 MB.'
+                    );
                   chunks.push(value);
                 }
               } finally {
                 await reader.cancel().catch(() => {});
               }
-              outcome = (await options.save(tripId, Buffer.concat(chunks), item.id))
+              outcome = (await options.save(
+                tripId,
+                Buffer.concat(chunks),
+                item.id,
+                video ? 'video/mp4' : item.mediaFile.mimeType
+              ))
                 ? 'added'
                 : 'skipped';
-            } catch {
+            } catch (cause) {
+              console.warn('google_photos_item_failed', {
+                job: jobId,
+                type: item.type,
+                error: cause instanceof Error ? cause.message : 'Import failed.'
+              });
               outcome = 'failed';
             }
           }
