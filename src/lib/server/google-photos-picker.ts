@@ -337,6 +337,9 @@ export function googlePhotosPicker(options: {
         db.prepare(
           `UPDATE google_photos_jobs SET cursor=cursor+1,${outcome}=${outcome}+1 WHERE id=?`
         ).run(jobId);
+        // Publish each processed video immediately instead of holding the whole
+        // response while the following videos download and encode.
+        if (item.type === 'VIDEO' && outcome !== 'skipped') break;
       }
       job = jobFor(jobId, userId, tripId);
       if (job.cursor >= items.length) {

@@ -2,6 +2,7 @@
   import { ChevronLeft, ChevronRight, Trash2 } from '@lucide/svelte';
   import { tick } from 'svelte';
   import type { ViewerItem } from './types';
+  import MediaThumbnail from './MediaThumbnail.svelte';
   let {
     items,
     index,
@@ -201,21 +202,21 @@
               }}
             ></video>
           {:else}
-            <img
-              class="media-image"
-              src={current.src}
-              alt={current.name}
-              draggable="false"
-              ondblclick={zoom}
-              onload={(event) => {
-                const image = event.currentTarget as HTMLImageElement;
-                loaded = {
-                  src: image.getAttribute('src') || '',
-                  width: image.naturalWidth,
-                  height: image.naturalHeight
-                };
-              }}
-            />
+            <div class="media-image">
+              <MediaThumbnail
+                src={current.src}
+                alt={current.name}
+                loading="eager"
+                ondblclick={zoom}
+                onReady={(image) => {
+                  loaded = {
+                    src: image.getAttribute('src') || '',
+                    width: image.naturalWidth,
+                    height: image.naturalHeight
+                  };
+                }}
+              />
+            </div>
           {/if}
         {/key}
         {#if items.length > 1}

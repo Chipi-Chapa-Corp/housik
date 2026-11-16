@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { Play } from '@lucide/svelte';
   import ImageViewer from '#lib/ImageViewer.svelte';
+  import MediaThumbnail from '#lib/MediaThumbnail.svelte';
   import { refreshAll } from '$app/navigation';
   import type { PlacePhoto } from '#lib/types.ts';
   import { photoRows } from '#lib/photo-layout.ts';
@@ -98,7 +99,7 @@
       style:height={width ? `${row.height}px` : '220px'}
       style:width={width ? `${row.width}px` : '100%'}
     >
-      {#each row.photos as photo}
+      {#each row.photos as photo (photo.id)}
         {@const position = photos.indexOf(photo) + 1}
         <button
           type="button"
@@ -109,14 +110,7 @@
             : `Enlarge place photo ${position}`}
           onclick={() => view(photo)}
         >
-          <img
-            src={source(photo, true)}
-            alt={`Place photo ${position}`}
-            width={photo.width}
-            height={photo.height}
-            loading="lazy"
-            decoding="async"
-          />
+          <MediaThumbnail src={source(photo, true)} width={photo.width} height={photo.height} />
           {#if photo.mime?.startsWith('video/')}<span class="video-play" aria-hidden="true"
               ><Play size={22} fill="currentColor" /></span
             >{/if}
@@ -178,11 +172,5 @@
     background: #1c2029aa;
     color: #fff;
     pointer-events: none;
-  }
-  .photo-tile img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
   }
 </style>

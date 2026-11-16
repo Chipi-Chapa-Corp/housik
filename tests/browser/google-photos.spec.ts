@@ -177,6 +177,26 @@ test('mixed imports update the gallery before completion and videos play, seek, 
   await expect(settings.getByRole('status')).toHaveText('Importing (3/4)');
   await expect(settings.getByRole('status')).toHaveText('4 added · 0 skipped', { timeout: 30000 });
   await settings.getByRole('button', { name: 'Close', exact: true }).click();
+  let releaseThumbnails!: () => void;
+  const thumbnailsReady = new Promise<void>((resolve) => {
+    releaseThumbnails = resolve;
+  });
+  await page.route('**/photos/*?size=thumbnail', async (route) => {
+    await thumbnailsReady;
+    await route.continue();
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  const firstTile = page.locator('.photo-tile').first();
+  await expect(firstTile.locator('.skeleton')).toBeVisible();
+  await expect(firstTile.locator('img')).toHaveAttribute('alt', '');
+  expect((await firstTile.textContent())?.trim()).toBe('');
+  const beforeLoad = await firstTile.boundingBox();
+  await page.screenshot({ path: '.test-data/gallery-skeletons.png' });
+  releaseThumbnails();
+  await expect(firstTile.locator('img')).toHaveCSS('opacity', '1');
+  expect((await firstTile.boundingBox())!.height).toBeCloseTo(beforeLoad!.height, 0);
+  await page.unroute('**/photos/*?size=thumbnail');
   const tile = page.getByRole('button', { name: 'Play place video 4', exact: true });
   await expect(tile).toBeVisible();
   await tile.click();

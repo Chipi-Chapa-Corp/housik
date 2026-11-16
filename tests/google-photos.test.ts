@@ -357,3 +357,29 @@ test('OAuth callbacks require current trip membership and expire after ten minut
     f.db.close();
   }
 });
+
+test('each processed video is published without waiting for the next video in the selection', async () => {
+  const f = fixture();
+  try {
+    f.pages([
+      [
+        { ...photo('clip-a'), type: 'VIDEO' },
+        { ...photo('clip-b'), type: 'VIDEO' }
+      ]
+    ]);
+    const { start } = await f.authorize();
+    f.select();
+    f.advance();
+    const first = await f.service.poll(start.jobId, 'alice', 'trip');
+    assert.equal(first.status, 'importing');
+    assert.equal(first.processed, 1);
+    assert.equal(first.added, 1);
+    assert.deepEqual(f.saves, ['clip-a']);
+    const second = await f.service.poll(start.jobId, 'alice', 'trip');
+    assert.equal(second.status, 'done');
+    assert.equal(second.added, 2);
+    assert.deepEqual(f.saves, ['clip-a', 'clip-b']);
+  } finally {
+    f.db.close();
+  }
+});
