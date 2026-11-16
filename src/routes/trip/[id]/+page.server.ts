@@ -12,7 +12,7 @@ import {
   validDate,
   locationUrl
 } from '#lib/server/auth.ts';
-import { allocate, balances, settle } from '#lib/money.ts';
+import { allocate, balances, settlementProgress } from '#lib/money.ts';
 import * as env from '$app/env/private';
 import { commitReceipt, commitReceipts, deleteReceipt } from '#lib/server/receipts.ts';
 import { amountInput, convertInput, exchangeRates } from '#lib/server/exchange-rates.ts';
@@ -43,7 +43,7 @@ export const load: PageServerLoad = async (event) => {
     ...data,
     session,
     ledger,
-    settlement: settle(ledger),
+    settlement: settlementProgress(data.members, data.expenses, data.tags, data.payments),
     scanning: !!env.OPENAI_API_KEY,
     exchangeRate: await exchangeRates.refresh()
   };
@@ -269,31 +269,63 @@ export const actions: Actions = {
     const s = requireSession(event),
       from = text(f, 'from'),
       to = text(f, 'to');
-    if (!s.member_id || to !== s.member_id) error(403, 'Only the receiver can confirm a payment.');
     memberExists(s.trip_id, from);
     memberExists(s.trip_id, to);
+    if (from === to) throw new Error('Choose two different people.');
+    if (!s.member_id || (from !== s.member_id && to !== s.member_id))
+      error(403, 'You can only record payments you send or receive.');
     const amount = await convertInput(f.get('amount'), f.get('currency') ?? 'CZK');
-    if (from === to || amount <= 0) throw new Error('Choose a sender and a positive amount.');
-    db.prepare('INSERT INTO payments VALUES(?,?,?,?,?,?,?)').run(
+    if (amount <= 0) throw new Error('Enter a positive amount.');
+    db.prepare(
+      'INSERT INTO payments(id,trip_id,from_id,to_id,amount,date,note,confirmed_at) VALUES(?,?,?,?,?,?,?,?)'
+    ).run(
       id(),
       s.trip_id,
       from,
       to,
       amount,
       validDate(text(f, 'date')),
-      String(f.get('note') || '').slice(0, 200)
+      String(f.get('note') || '').slice(0, 200),
+      to === s.member_id ? new Date().toISOString() : null
     );
+  }),
+  confirmPayment: wrap((event, f) => {
+    const s = requireSession(event),
+      paymentId = text(f, 'id');
+    const payment = db
+      .prepare('SELECT to_id,confirmed_at FROM payments WHERE id=? AND trip_id=?')
+      .get(paymentId, s.trip_id) as { to_id: string; confirmed_at: string | null } | undefined;
+    if (!payment) error(404, 'Payment not found.');
+    if (payment.to_id !== s.member_id) error(403, 'Only the receiver can confirm a payment.');
+    if (payment.confirmed_at !== null) throw new Error('Payment is already confirmed.');
+    db.prepare(
+      'UPDATE payments SET confirmed_at=? WHERE id=? AND trip_id=? AND confirmed_at IS NULL'
+    ).run(new Date().toISOString(), paymentId, s.trip_id);
   }),
   undoPayment: wrap((event, f) => {
     const s = requireSession(event);
     const paymentId = text(f, 'id');
     const payment = db
-      .prepare('SELECT to_id FROM payments WHERE id=? AND trip_id=?')
-      .get(paymentId, s.trip_id) as { to_id: string } | undefined;
+      .prepare('SELECT from_id,to_id,confirmed_at FROM payments WHERE id=? AND trip_id=?')
+      .get(paymentId, s.trip_id) as
+      { from_id: string; to_id: string; confirmed_at: string | null } | undefined;
     if (!payment) error(404, 'Payment not found.');
-    if (!s.member_id || payment.to_id !== s.member_id)
-      error(403, 'Only the receiver can undo a payment.');
-    db.prepare('DELETE FROM payments WHERE id=? AND trip_id=?').run(paymentId, s.trip_id);
+    if (!s.member_id || ![payment.from_id, payment.to_id].includes(s.member_id))
+      error(403, 'Only the sender or receiver can remove a payment.');
+    // Include the observed state so stale forms cannot delete a payment that
+    // another person has just confirmed or moved back to Pending.
+    const expected = f.get('state');
+    if (expected !== (payment.confirmed_at === null ? 'pending' : 'paid'))
+      throw new Error('Payment changed. Refresh and try again.');
+    if (payment.confirmed_at === null)
+      db.prepare('DELETE FROM payments WHERE id=? AND trip_id=? AND confirmed_at IS NULL').run(
+        paymentId,
+        s.trip_id
+      );
+    else
+      db.prepare(
+        'UPDATE payments SET confirmed_at=NULL WHERE id=? AND trip_id=? AND confirmed_at=?'
+      ).run(paymentId, s.trip_id, payment.confirmed_at);
   }),
   settings: wrap((event, f) => {
     const s = requireSession(event),

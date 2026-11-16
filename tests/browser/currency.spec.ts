@@ -1,4 +1,4 @@
-import { createFixtureTrip } from './fixtures';
+import { createFixtureTrip, selectTripTab, selectPaymentMember } from './fixtures';
 import { test, expect, type Page } from '@playwright/test';
 
 async function close(page: Page) {
@@ -72,6 +72,7 @@ test('EUR amounts stay editable in EUR while ledger totals use CZK', async ({ pa
   await expect(row.locator('.expense-total')).toHaveText(/^92,25/);
   await page.reload();
   await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await selectTripTab(page, 'Expenses');
   await row.click();
   await page.locator('dialog[open]').getByRole('button', { name: 'Edit expense' }).click();
   dialog = page.locator('dialog[open]');
@@ -161,6 +162,7 @@ test('EUR amounts stay editable in EUR while ledger totals use CZK', async ({ pa
   expect(forgedRate.ok()).toBe(true);
   await page.reload();
   await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await selectTripTab(page, 'Expenses');
   await expect(
     page.locator('.expense-row').filter({ hasText: 'Server rate' }).locator('.expense-total')
   ).toHaveText(/^50,00/);
@@ -168,12 +170,14 @@ test('EUR amounts stay editable in EUR while ledger totals use CZK', async ({ pa
   await page.getByRole('button', { name: 'Settle up', exact: true }).last().click();
   await page.getByRole('button', { name: 'Payment', exact: true }).click();
   dialog = page.locator('dialog[open]');
+  await selectPaymentMember(dialog, 'Sender', 'Jamie');
+  await expect(dialog.getByRole('combobox', { name: 'Receiver' })).toBeDisabled();
+  await expect(dialog.getByRole('combobox', { name: 'Receiver' })).toHaveText('Currency tester');
   await dialog.getByRole('button', { name: 'EUR', exact: true }).click();
   await dialog.getByLabel('Amount · EUR', { exact: true }).fill('1');
   await dialog.getByRole('button', { name: 'Confirm received', exact: true }).click();
-  await expect(page.locator('.payment-row > .positive').filter({ hasText: /^\+25,00/ })).toHaveText(
-    /\+25,00/
-  );
+  await expect(page.locator('.paid-panel .payment-amount')).toHaveText(/25,00/);
+  await expect(page.locator('.paid-panel .payment-amount')).not.toHaveClass(/positive|negative/);
 
   await page.getByRole('button', { name: 'Receipts', exact: true }).last().click();
   await page.getByRole('button', { name: 'Add receipt', exact: true }).click();

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allocate, balances, cents, settle } from '../src/lib/money';
+import { allocate, balances, cents, settle, settlementProgress } from '../src/lib/money';
 import type { Member, Expense, Tag } from '../src/lib/types';
 const members = ['a', 'b', 'c'].map((id, i) => ({
   id,
@@ -257,5 +257,53 @@ test('existing receipt member overrides retain their original shares', () => {
       ['b', 0],
       ['c', 1000]
     ]
+  );
+});
+
+test('pending transfers reserve unpaid amounts without settling the receiving balance', () => {
+  const people = members.slice(0, 2);
+  const expenses = [expense({ amount: 20000 })];
+  const payments = [
+    { from_id: 'b', to_id: 'a', amount: 4000, confirmed_at: '2026-11-16' },
+    { from_id: 'b', to_id: 'a', amount: 2000, confirmed_at: null }
+  ];
+  assert.deepEqual(
+    balances(people, expenses, [], payments).map((row) => row.net),
+    [6000, -6000]
+  );
+  assert.deepEqual(settlementProgress(people, expenses, [], payments).transfers, [
+    { from: 'b', to: 'a', amount: 4000, total: 10000 }
+  ]);
+  payments[1].confirmed_at = '2026-11-16';
+  assert.deepEqual(
+    balances(people, expenses, [], payments).map((row) => row.net),
+    [4000, -4000]
+  );
+  assert.deepEqual(settlementProgress(people, expenses, [], payments).transfers, [
+    { from: 'b', to: 'a', amount: 4000, total: 10000 }
+  ]);
+});
+
+test('fully reserved payments disappear from Unpaid and overpayments reverse the plan', () => {
+  const people = members.slice(0, 2);
+  const expenses = [expense({ amount: 20000 })];
+  const payment = { from_id: 'b', to_id: 'a', amount: 10000, confirmed_at: null };
+  assert.deepEqual(settlementProgress(people, expenses, [], [payment]).transfers, []);
+  assert.deepEqual(
+    balances(people, expenses, [], [payment]).map((row) => row.net),
+    [10000, -10000]
+  );
+  assert.deepEqual(
+    settlementProgress(people, expenses, [], [{ ...payment, amount: 12000 }]).transfers,
+    []
+  );
+  assert.deepEqual(
+    settlementProgress(
+      people,
+      expenses,
+      [],
+      [{ ...payment, amount: 12000, confirmed_at: '2026-11-16' }]
+    ).transfers,
+    [{ from: 'a', to: 'b', amount: 2000, total: 2000 }]
   );
 });

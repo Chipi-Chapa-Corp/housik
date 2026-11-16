@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { join } from 'node:path';
-import { createFixtureTrip } from './fixtures';
+import { createFixtureTrip, selectTripTab } from './fixtures';
 
 async function login(page: Page, name: string) {
   await page.goto('/');
@@ -56,6 +56,7 @@ test('shared links show join or trip sign-in, filter names and only expose trip 
       await visitor.screenshot({ path: `.test-data/invite-join-${width}.png`, fullPage: true });
     }
     await visitor.getByRole('button', { name: 'Join trip', exact: true }).click();
+    await selectTripTab(visitor, 'Expenses');
     await expect(visitor.getByRole('button', { name: 'Add expense', exact: true })).toBeVisible();
     await expect(
       visitor.locator('.expense-row').filter({ hasText: 'Shared purchase' })
@@ -69,6 +70,7 @@ test('shared links show join or trip sign-in, filter names and only expose trip 
     expect(membership(tripId, 'Existing visitor')).toHaveLength(1);
     await visitor.reload();
     await expect(visitor.getByRole('button', { name: 'Join trip', exact: true })).toHaveCount(0);
+    await selectTripTab(visitor, 'Expenses');
     await expect(visitor.getByRole('button', { name: 'Add expense', exact: true })).toBeVisible();
 
     const signedOut = await signedOutContext.newPage();
@@ -99,6 +101,7 @@ test('shared links show join or trip sign-in, filter names and only expose trip 
     await name.fill('New traveler');
     await signedOut.getByLabel('Password', { exact: true }).fill('invitation-password');
     await signedOut.getByRole('button', { name: 'Continue', exact: true }).click();
+    await selectTripTab(signedOut, 'Expenses');
     await expect(signedOut.getByRole('button', { name: 'Add expense', exact: true })).toBeVisible();
     expect(membership(tripId, 'New traveler')).toHaveLength(1);
     await signedOut.getByRole('button', { name: 'Sign out', exact: true }).click();
@@ -116,6 +119,7 @@ test('shared links show join or trip sign-in, filter names and only expose trip 
     );
     await signedOut.getByLabel('Password', { exact: true }).fill('invitation-password');
     await signedOut.getByRole('button', { name: 'Continue', exact: true }).click();
+    await selectTripTab(signedOut, 'Expenses');
     await expect(signedOut.getByRole('button', { name: 'Add expense', exact: true })).toBeVisible();
     expect(membership(tripId, 'New traveler')).toHaveLength(1);
     const missing = await page.request.get('/trip/00000000-0000-4000-8000-000000000000');

@@ -27,11 +27,13 @@
     Tag as TagIcon,
     CalendarDays,
     CircleCheck,
-    Copy
+    Copy,
+    Send
   } from '@lucide/svelte';
   import Modal from '#lib/Modal.svelte';
   import Toast from '#lib/Toast.svelte';
   import NameBubble from '#lib/NameBubble.svelte';
+  import MemberSelect from '#lib/MemberSelect.svelte';
   import TagSelect from '#lib/TagSelect.svelte';
   import AmountInput from '#lib/AmountInput.svelte';
   import ReceiptImport from '#lib/ReceiptImport.svelte';
@@ -45,7 +47,7 @@
   import { departureDate } from '#lib/dates.ts';
   import type { PageData } from '../routes/trip/[id]/$types';
   let { data }: { data: Extract<PageData, { access: 'member' }> } = $props();
-  let tab = $state('expenses'),
+  let tab = $state('home'),
     filter = $state('all'),
     receiptFilter = $state(''),
     groupReceipts = $state(false),
@@ -72,6 +74,7 @@
     choiceMode = $state('default'),
     choiceExtra = $state('');
   let paymentFrom = $state(''),
+    paymentTo = $state(''),
     paymentAmount = $state('');
   let viewedReceipt = $state<{ src: string; mime: string; name: string } | null>(null);
   let memberUsername = $state('');
@@ -141,9 +144,7 @@
       style: 'currency',
       currency: data.trip.currency,
       minimumFractionDigits: 2
-    }).format(n / 100);
-  const signedMoney = (amount: number) =>
-    amount === 0 ? money(0) : `${amount > 0 ? '+' : '−'}${money(Math.abs(amount))}`;
+    }).format(Math.abs(n) / 100);
   const person = (id: string) => data.members.find((m) => m.id === id)!;
   const dateRange = $derived.by(() => {
     const start = new Date(`${data.trip.start}T12:00:00`),
@@ -216,12 +217,33 @@
     const extra = c?.input_extra ?? c?.extra;
     choiceExtra = extra ? String(extra / 100) : '';
   }
-  function recordPayment(from = '', amount = 0) {
-    paymentFrom = from || data.members.find((m) => m.id !== data.session.member_id)?.id || '';
+  const pendingPayments = $derived(
+    data.payments.filter((payment) => payment.confirmed_at === null)
+  );
+  const paidPayments = $derived(data.payments.filter((payment) => payment.confirmed_at !== null));
+  const duplicatePayment = $derived(
+    data.payments.find(
+      (payment) =>
+        payment.from_id === paymentFrom &&
+        payment.to_id === paymentTo &&
+        payment.amount === czkPreview(paymentAmount, paymentCurrency) &&
+        payment.amount > 0
+    )
+  );
+  function recordPayment(
+    from = data.session.member_id!,
+    to = data.members.find((member) => member.id !== from)?.id ?? '',
+    amount = 0
+  ) {
+    paymentFrom = from;
+    paymentTo = to;
     paymentAmount = amount ? String(amount / 100) : '';
     paymentCurrency = 'CZK';
     open('payment');
   }
+  $effect(() => {
+    if (paymentFrom && paymentFrom !== data.session.member_id) paymentTo = data.session.member_id!;
+  });
   function newReceipt() {
     open('receipt');
   }
@@ -280,7 +302,7 @@
         person(p.from_id).name,
         person(p.to_id).name,
         (p.amount / 100).toFixed(2),
-        'Paid'
+        p.confirmed_at === null ? 'Pending' : 'Paid'
       ])
     ];
     const url = URL.createObjectURL(
@@ -296,12 +318,75 @@
   }
 </script>
 
+{#snippet balanceAmount(amount: number, original = 0, showSettledTotal = false)}
+  <span class="balance-amount">
+    <span class:positive={amount > 0} class:negative={amount < 0}>
+      {money(amount === 0 && showSettledTotal ? original : amount)}
+    </span>
+    {#if amount * original > 0 && Math.abs(amount) < Math.abs(original)}
+      <span class="settled-amount"> / {money(original)}</span>
+    {/if}
+  </span>
+{/snippet}
+
+{#snippet paymentRow(payment: Payment)}
+  <div class="payment-row" data-state={payment.confirmed_at === null ? 'pending' : 'paid'}>
+    <div class="payment-parties">
+      <NameBubble name={person(payment.from_id).name} color={person(payment.from_id).color} />
+      <ArrowRight size={18} />
+      <NameBubble name={person(payment.to_id).name} color={person(payment.to_id).color} />
+    </div>
+    <strong
+      class="payment-amount"
+      class:negative={payment.confirmed_at === null && payment.from_id === data.session.member_id}
+      class:positive={payment.confirmed_at === null && payment.to_id === data.session.member_id}
+      >{money(payment.amount)}</strong
+    >
+    <div class="payment-actions">
+      {#if payment.confirmed_at === null && payment.to_id === data.session.member_id}
+        <form method="POST" action="?/confirmPayment" use:enhance={submit}>
+          <input type="hidden" name="id" value={payment.id} />
+          <button class="btn secondary compact" disabled={busy}
+            ><Check size={16} />Confirm received</button
+          >
+        </form>
+      {/if}
+      {#if [payment.from_id, payment.to_id].includes(data.session.member_id!)}
+        <button
+          class="icon-btn payment-undo"
+          aria-label={payment.confirmed_at === null ? 'Remove payment' : 'Move to Pending'}
+          title={payment.confirmed_at === null ? 'Remove payment' : 'Move to Pending'}
+          disabled={busy}
+          onclick={() => {
+            pendingPayment = payment;
+            open('undo');
+          }}><X size={16} /></button
+        >
+      {/if}
+    </div>
+    {#if payment.note}<p class="payment-note">{payment.note}</p>{/if}
+    <div class="payment-timeline">
+      <span
+        ><Send size={16} aria-label="Sent" /><time datetime={payment.date}>{payment.date}</time
+        ></span
+      >
+      {#if payment.confirmed_at}<span
+          ><CircleCheck size={16} aria-label="Confirmed" /><time datetime={payment.confirmed_at}
+            >{payment.confirmed_at.slice(0, 10)}</time
+          ></span
+        >{/if}
+    </div>
+  </div>
+{/snippet}
+
 <div class="app-shell">
   <aside class="sidebar">
     <a href="/" class="brand">Housik</a>
     <a href="/" class="back-link"><ArrowLeft size={15} /> All trips</a>
     <nav aria-label="Trip">
-      <button class:active={tab === 'expenses'} onclick={() => (tab = 'expenses')}
+      <button class:active={tab === 'home'} onclick={() => (tab = 'home')}
+        ><House size={18} />Home</button
+      ><button class:active={tab === 'expenses'} onclick={() => (tab = 'expenses')}
         ><LayoutGrid size={18} />Expenses</button
       ><button class:active={tab === 'people'} onclick={() => (tab = 'people')}
         ><Users size={18} />People</button
@@ -328,56 +413,61 @@
         <button class="icon-btn" aria-label="Sign out"><LogOut size={17} /></button>
       </form>
     </div>
-    <header class="trip-heading">
-      <div class="trip-title-row">
-        <h1>{data.trip.name}</h1>
-        <button class="icon-btn" aria-label="Trip settings" onclick={() => open('settings')}
-          ><Settings2 size={20} /></button
-        >
-      </div>
-      <div class="trip-meta-row">
-        <p class="trip-subtitle">
-          <span><CalendarDays size={16} />{dateRange}</span><span class="dot-sep">·</span><span
-            >{data.trip.nights} nights</span
-          >{#if data.trip.house || data.trip.location_url}<span class="dot-sep">·</span
-            >{#if data.trip.location_url}<a
-                class="location-link"
-                href={data.trip.location_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                >{data.trip.house || 'Location'}<ArrowUpRight size={16} /></a
-              >{:else}<span>{data.trip.house}</span>{/if}{/if}
-        </p>
-        <div class="name-list">
-          {#each data.members as m}<NameBubble name={m.name} color={m.color} />{/each}
-        </div>
-      </div>
-    </header>
-    <section class="stats" aria-label="Trip totals">
-      <div class="stat">
-        <div class="stat-label">Total</div>
-        <strong>{money(total)}</strong>
-      </div>
-      <div class="stat">
-        <div class="stat-label">{mine.net > 0 ? 'You receive' : 'You pay'}</div>
-        <strong class:positive={mine.net > 0} class:negative={mine.net < 0}
-          >{signedMoney(mine.net)}</strong
-        >
-      </div>
-      <button class="stat balance-stat" onclick={() => (tab = 'settle')}
-        ><div class="stat-label">
-          Settle
-          <ArrowUpRight size={20} />
-        </div>
-      </button>
-    </section>
     <div class="mobile-tabs">
-      <button class:active={tab === 'expenses'} onclick={() => (tab = 'expenses')}>Expenses</button
+      <button class:active={tab === 'home'} onclick={() => (tab = 'home')}>Home</button><button
+        class:active={tab === 'expenses'}
+        onclick={() => (tab = 'expenses')}>Expenses</button
       ><button class:active={tab === 'people'} onclick={() => (tab = 'people')}>People</button
       ><button class:active={tab === 'receipts'} onclick={() => (tab = 'receipts')}>Receipts</button
       ><button class:active={tab === 'settle'} onclick={() => (tab = 'settle')}>Settle up</button>
     </div>
-    {#if tab === 'expenses'}
+    {#if tab === 'home'}
+      <header class="trip-heading">
+        <div class="trip-title-row">
+          <h1>{data.trip.name}</h1>
+          <button class="icon-btn" aria-label="Trip settings" onclick={() => open('settings')}
+            ><Settings2 size={20} /></button
+          >
+        </div>
+        <div class="trip-meta-row">
+          <p class="trip-subtitle">
+            <span><CalendarDays size={16} />{dateRange}</span><span class="dot-sep">·</span><span
+              >{data.trip.nights} nights</span
+            >{#if data.trip.house || data.trip.location_url}<span class="dot-sep">·</span
+              >{#if data.trip.location_url}<a
+                  class="location-link"
+                  href={data.trip.location_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >{data.trip.house || 'Location'}<ArrowUpRight size={16} /></a
+                >{:else}<span>{data.trip.house}</span>{/if}{/if}
+          </p>
+          <div class="name-list">
+            {#each data.members as m}<NameBubble name={m.name} color={m.color} />{/each}
+          </div>
+        </div>
+      </header>
+      <section class="stats" aria-label="Trip totals">
+        <div class="stat">
+          <div class="stat-label">Total</div>
+          <strong>{money(total)}</strong>
+        </div>
+        <div class="stat">
+          <div class="stat-label">
+            {mine.net === 0 ? 'Settled' : mine.net > 0 ? 'You receive' : 'You pay'}
+          </div>
+          <strong class:positive={mine.net > 0} class:negative={mine.net < 0}
+            >{money(mine.net)}</strong
+          >
+        </div>
+        <button class="stat balance-stat" onclick={() => (tab = 'settle')}
+          ><div class="stat-label">
+            Settle
+            <ArrowUpRight size={20} />
+          </div>
+        </button>
+      </section>
+    {:else if tab === 'expenses'}
       <div class="content-grid">
         <section class="expenses-section">
           <div class="section-heading">
@@ -500,25 +590,14 @@
                   >{row.net === 0 ? 'All square' : row.net > 0 ? 'Gets back' : 'Owes'}</span
                 >
               </div>
-              <strong class="person-net" class:positive={row.net > 0} class:negative={row.net < 0}
-                >{signedMoney(row.net)}</strong
-              >
+              <strong class="person-net">
+                {@render balanceAmount(row.net, row.spent - row.share, true)}
+              </strong>
               <div class="person-details">
-                <span
-                  >Share<strong class:negative={row.share > 0}>{signedMoney(-row.share)}</strong
-                  ></span
-                ><span
-                  >Purchases paid<strong class:positive={row.spent > 0}
-                    >{signedMoney(row.spent)}</strong
-                  ></span
-                ><span
-                  >Transfers sent<strong class:positive={row.sent > 0}
-                    >{signedMoney(row.sent)}</strong
-                  ></span
-                ><span
-                  >Received<strong class:negative={row.received > 0}
-                    >{signedMoney(-row.received)}</strong
-                  ></span
+                <span>Share<strong>{money(-row.share)}</strong></span><span
+                  >Purchases paid<strong>{money(row.spent)}</strong></span
+                ><span>Transfers sent<strong>{money(row.sent)}</strong></span><span
+                  >Received<strong>{money(-row.received)}</strong></span
                 >
               </div>
             </article>{/each}
@@ -540,69 +619,46 @@
           </div>
         </div>
         <div class="settlement-grid">
-          <div class="panel">
-            <div class="panel-title">
-              <h3>Unpaid</h3>
-            </div>
+          <div class="panel unpaid-panel">
+            <div class="panel-title"><h3>Unpaid</h3></div>
             {#each data.settlement.transfers as t}<div class="transfer-row">
                 <div class="transfer-people">
                   <NameBubble name={person(t.from).name} color={person(t.from).color} /><ArrowRight
                     size={18}
-                  /><NameBubble name={person(t.to).name} color={person(t.to).color} />
+                  />
+                  <NameBubble name={person(t.to).name} color={person(t.to).color} />
                 </div>
-                <strong
-                  class:negative={t.from === data.session.member_id}
-                  class:positive={t.to === data.session.member_id}
-                  >{t.from === data.session.member_id
-                    ? signedMoney(-t.amount)
-                    : t.to === data.session.member_id
-                      ? signedMoney(t.amount)
-                      : money(t.amount)}</strong
-                >{#if t.to === data.session.member_id}<button
+                <strong class="transfer-amount">
+                  {@render balanceAmount(
+                    t.to === data.session.member_id ? t.amount : -t.amount,
+                    t.to === data.session.member_id ? t.total : -t.total
+                  )}
+                </strong>
+                {#if t.from === data.session.member_id || t.to === data.session.member_id}<button
                     class="btn secondary compact"
-                    onclick={() => recordPayment(t.from, t.amount)}
-                    ><Check size={14} />Confirm received</button
-                  >{/if}
+                    onclick={() => recordPayment(t.from, t.to, t.amount)}
+                  >
+                    <ArrowRight size={14} />Settle
+                  </button>{/if}
               </div>{:else}<div class="empty-state success-state">
                 <CircleCheck size={42} strokeWidth={1.3} />
-                <h3>All square.</h3>
+                <h3>{pendingPayments.length ? 'Awaiting confirmation' : 'All square.'}</h3>
               </div>{/each}
           </div>
-          <div class="panel">
-            <div class="panel-title">
-              <h3>Paid</h3>
-              <CircleCheck size={18} class="positive" />
-            </div>
-            {#each data.payments as p}<div class="payment-row">
-                <span class="payment-check"><Check size={15} /></span>
-                <div class="payment-details">
-                  <div class="payment-parties">
-                    <NameBubble
-                      name={person(p.from_id).name}
-                      color={person(p.from_id).color}
-                    /><ArrowRight size={18} /><NameBubble
-                      name={person(p.to_id).name}
-                      color={person(p.to_id).color}
-                    />
-                  </div>
-                  <span class="payment-note">{p.note || p.date}</span>
-                </div>
-                <strong class="positive">{signedMoney(p.amount)}</strong
-                >{#if p.to_id === data.session.member_id}<button
-                    class="icon-btn payment-undo"
-                    type="button"
-                    aria-label="Undo payment"
-                    title="Undo payment"
-                    disabled={busy}
-                    onclick={() => {
-                      pendingPayment = p;
-                      open('undo');
-                    }}><X size={15} /></button
-                  >{/if}
-              </div>{:else}<div class="empty-state small-empty">
+          <div class="panel pending-panel">
+            <div class="panel-title"><h3>Pending</h3></div>
+            {#each pendingPayments as payment}{@render paymentRow(payment)}{:else}
+              <div class="empty-state small-empty"><p>No pending payments</p></div>
+            {/each}
+          </div>
+          <div class="panel paid-panel">
+            <div class="panel-title"><h3>Paid</h3></div>
+            {#each paidPayments as payment}{@render paymentRow(payment)}{:else}
+              <div class="empty-state small-empty">
                 <Wallet size={28} strokeWidth={1.3} />
                 <p>No payments</p>
-              </div>{/each}
+              </div>
+            {/each}
           </div>
         </div>
         {#if message && !modal}<p class="form-error" role="alert">{message}</p>{/if}
@@ -907,39 +963,40 @@
     >
   </form></Modal
 >
-<Modal onClose={() => (modal = '')} open={modal === 'payment'} title="Confirm received"
-  ><form method="POST" action="?/payment" use:enhance={submit} class="stack">
+<Modal onClose={() => (modal = '')} open={modal === 'payment'} title="Payment">
+  <form method="POST" action="?/payment" use:enhance={submit} class="stack">
+    <div class="payment-entry-parties">
+      <MemberSelect members={data.members} bind:value={paymentFrom} name="from" label="Sender" />
+      <ArrowRight size={18} />
+      <MemberSelect
+        members={data.members}
+        bind:value={paymentTo}
+        name="to"
+        label="Receiver"
+        disabled={paymentFrom !== data.session.member_id}
+      />
+    </div>
     <AmountInput
       bind:value={paymentAmount}
       bind:currency={paymentCurrency}
       rate={data.exchangeRate?.rate ?? null}
     />
-    <div class="form-grid">
-      <label
-        >From<select name="from" bind:value={paymentFrom}
-          >{#each data.members.filter((m) => m.id !== data.session.member_id) as m}<option
-              value={m.id}>{m.name}</option
-            >{/each}</select
-        ></label
-      >
-      <input type="hidden" name="to" value={data.session.member_id} />
-      <div class="received-by">
-        <span>Received by</span><NameBubble
-          name={data.session.user.name}
-          color={person(data.session.member_id!).color}
-        />
-      </div>
-    </div>
-    <div class="form-grid">
-      <label>Date<input type="date" name="date" value={today} required /></label>
-    </div>
+    <label>Date<input type="date" name="date" value={today} required /></label>
     <label>Note<input name="note" maxlength="200" /></label>
-    {#if message}<p class="form-error" role="alert">{message}</p>{/if}<button
-      class="btn primary full"
-      disabled={busy}>Confirm received <Check size={16} /></button
-    >
-  </form></Modal
->
+    {#if paymentFrom === paymentTo}<p class="form-error">Choose two different people.</p>{/if}
+    {#if message}<p class="form-error" role="alert">{message}</p>{/if}
+    {#if duplicatePayment}<p class="payment-warning" role="status">
+        Same amount is already {duplicatePayment.confirmed_at === null
+          ? 'Pending'
+          : paymentTo === data.session.member_id
+            ? 'Received'
+            : 'Sent'}
+      </p>{/if}
+    <button class="btn primary payment-submit" disabled={busy || paymentFrom === paymentTo}>
+      {paymentTo === data.session.member_id ? 'Confirm received' : 'Add payment'}<Check size={16} />
+    </button>
+  </form>
+</Modal>
 <Modal onClose={() => (modal = '')} open={modal === 'tags'} title="Tags"
   ><div class="tag-list">
     {#each data.tags as t}<button
@@ -1049,9 +1106,18 @@
     >
   </form></Modal
 >
-<Modal onClose={() => (modal = '')} open={modal === 'undo'} title="Undo received payment?">
+<Modal
+  onClose={() => (modal = '')}
+  open={modal === 'undo'}
+  title={pendingPayment?.confirmed_at ? 'Move payment to Pending?' : 'Remove payment?'}
+>
   {#if pendingPayment}<form method="POST" action="?/undoPayment" use:enhance={submit} class="stack">
       <input type="hidden" name="id" value={pendingPayment.id} />
+      <input
+        type="hidden"
+        name="state"
+        value={pendingPayment.confirmed_at === null ? 'pending' : 'paid'}
+      />
       <div class="payment-parties">
         <NameBubble
           name={person(pendingPayment.from_id).name}
@@ -1061,11 +1127,13 @@
           color={person(pendingPayment.to_id).color}
         />
       </div>
-      <strong class="positive">{signedMoney(pendingPayment.amount)}</strong>
+      <strong>{money(pendingPayment.amount)}</strong>
       {#if message}<p class="form-error" role="alert">{message}</p>{/if}
       <div class="modal-actions">
         <button type="button" class="btn secondary" onclick={() => (modal = '')}>Cancel</button
-        ><button class="btn primary" disabled={busy}>Undo payment</button>
+        ><button class="btn primary" disabled={busy}
+          >{pendingPayment.confirmed_at === null ? 'Remove payment' : 'Move to Pending'}</button
+        >
       </div>
     </form>{/if}
 </Modal>

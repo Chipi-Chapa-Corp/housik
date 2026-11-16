@@ -1,4 +1,4 @@
-import { createFixtureTrip } from './fixtures';
+import { createFixtureTrip, selectTripTab } from './fixtures';
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { readFileSync, statSync, existsSync } from 'node:fs';
@@ -803,6 +803,7 @@ test('group receipts, edit through the shared popup, and confirm deletion as a t
   ).toBe(true);
   await page.reload();
   await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await selectTripTab(page, 'Expenses');
   await expect(page.locator('.expense-row')).toHaveCount(baselineExpenses.length + 3);
   const toggle = page.getByRole('checkbox', { name: 'Group receipts', exact: true });
   await toggle.check();

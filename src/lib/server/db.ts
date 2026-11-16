@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { checkWritableDirectory } from './storage';
 import { migrateReceiptNames } from './receipt-names';
+import { migratePaymentStatus } from './payment-status';
 import type { Expense, Member, Tag, Payment } from '#lib/types.ts';
 
 const path = resolve(env.DATABASE_PATH || './data/housik.sqlite');
@@ -106,6 +107,7 @@ db.transaction(() => {
   }
 })();
 migrateReceiptNames(db);
+migratePaymentStatus(db);
 export const id = () => randomUUID();
 export const today = () => new Date().toISOString().slice(0, 10);
 export type Trip = {

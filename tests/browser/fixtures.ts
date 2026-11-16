@@ -1,7 +1,18 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type Locator } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { resolve, join } from 'node:path';
+
+export async function selectTripTab(page: Page, name: string) {
+  await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await page.getByRole('button', { name, exact: true }).filter({ visible: true }).click();
+}
+
+export async function selectPaymentMember(dialog: Locator, label: string, name: string) {
+  const trigger = dialog.getByRole('combobox', { name: label, exact: true });
+  if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click();
+  await dialog.getByRole('option', { name, exact: true }).click();
+}
 
 // Browser fixtures live only in the runner's separate database, never in the app.
 export async function createFixtureTrip(
@@ -68,5 +79,6 @@ export async function createFixtureTrip(
   }
   await page.reload();
   await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await selectTripTab(page, 'Expenses');
   return { path, name };
 }

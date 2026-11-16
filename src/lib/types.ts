@@ -33,6 +33,7 @@ export type Payment = {
   amount: number;
   date: string;
   note: string;
+  confirmed_at: string | null;
 };
 export type Balance = {
   id: string;

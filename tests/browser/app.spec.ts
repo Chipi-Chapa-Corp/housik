@@ -1,4 +1,4 @@
-import { createFixtureTrip } from './fixtures';
+import { createFixtureTrip, selectTripTab, selectPaymentMember } from './fixtures';
 import { test, expect, type Page } from '@playwright/test';
 const owner = 'Álex Novák! +'.padEnd(20, '!'),
   guest = 'Jamie O’Neil & Co.';
@@ -100,7 +100,9 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await dialog.getByLabel('Amount per night', { exact: true }).check();
   await dialog.getByRole('button', { name: 'Add expense', exact: true }).click();
   await expect(page.locator('.expense-row')).toHaveCount(1);
+  await selectTripTab(page, 'Home');
   await expect(page.locator('.stats')).toContainText('720,00');
+  await selectTripTab(page, 'Expenses');
   await page.getByRole('button', { name: 'Add expense', exact: true }).click();
   dialog = page.locator('dialog[open]');
   await dialog.getByLabel('Name', { exact: true }).fill('Groceries');
@@ -114,12 +116,15 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   dialog = page.locator('dialog[open]');
   await dialog.getByLabel('Amount · CZK', { exact: true }).fill('60');
   await dialog.getByRole('button', { name: 'Save changes' }).click();
+  await selectTripTab(page, 'Home');
   await expect(page.locator('.stats')).toContainText('780,00');
+  await selectTripTab(page, 'Expenses');
   const guestContext = await browser.newContext();
   const gp = await guestContext.newPage();
   await login(gp, guest);
   await gp.getByRole('link', { name: new RegExp('Mountain weekend') }).click();
   await expect(gp).toHaveURL(tripUrl);
+  await selectTripTab(gp, 'Expenses');
   await expect(gp.getByRole('button', { name: 'Add expense', exact: true })).toBeVisible();
   await expect(
     gp.locator('.expense-row').filter({ hasText: 'Groceries' }).locator('.expense-total')
@@ -140,6 +145,7 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await gp.reload();
   await expect(gp.locator('html[data-hydrated=true]')).toHaveCount(1);
   await expect(gp.getByRole('heading', { name: 'Mountain weekend' })).toBeVisible();
+  await selectTripTab(gp, 'Expenses');
   // Members can manage expenses, but the payer must belong to this trip.
   const forged = await guestContext.request.post(`${tripPath}?/expense`, {
     form: { title: 'forged', amount: '99', payer: 'x', kind: 'other', date: '2026-11-20' },
@@ -159,6 +165,7 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await outsider.close();
   await page.reload();
   await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await selectTripTab(page, 'Expenses');
   await page.getByRole('button', { name: /Groceries.*60,00/ }).click();
   dialog = page.locator('dialog[open]');
   await expect(dialog.locator('.split-person').filter({ hasText: guest })).toContainText('0,00');
@@ -176,6 +183,7 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await close(page);
   await page.reload();
   await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await selectTripTab(page, 'Expenses');
   await page.getByRole('button', { name: /Groceries.*60,00/ }).click();
   dialog = page.locator('dialog[open]');
   await expect(dialog.locator('.split-person').filter({ hasText: owner })).toContainText('60,00');
@@ -266,13 +274,16 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   expect(receipt.headers()['content-type']).toBe('image/png');
   await page.getByRole('button', { name: 'Expenses', exact: false }).first().click();
   await expect(page.locator('.expense-row')).toHaveCount(5);
+  await selectTripTab(page, 'Home');
   await expect(page.locator('.stats')).toContainText('You receive');
-  await expect(page.locator('.stats .positive')).toHaveText(/\+366,00/);
+  await expect(page.locator('.stats .positive')).toHaveText(/366,00/);
+  await expect(page.locator('.stats')).not.toContainText('Average');
+  await expect(page.locator('.stats')).not.toContainText('Your share');
+  await selectTripTab(page, 'Expenses');
   await expect(
     page.locator('.expense-row').filter({ hasText: 'House rent' }).locator('.expense-total')
   ).toHaveText(/^720,00/);
-  await expect(page.locator('.stats')).not.toContainText('Average');
-  await expect(page.locator('.stats')).not.toContainText('Your share');
+  await expect(page.locator('.stats')).toHaveCount(0);
   await expect(page.locator('.right-rail')).toHaveCount(0);
   await expect(page.locator('.field-note,.optional,.nav-count,.balance-legend')).toHaveCount(0);
   const wrongSizes = await page.evaluate(() =>
@@ -320,6 +331,7 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
       });
   });
   expect(contrastFailures).toEqual([]);
+  await selectTripTab(page, 'Home');
   const backgrounds = await page
     .locator('.trip-meta-row .name-bubble')
     .evaluateAll((elements) => elements.map((el) => getComputedStyle(el).backgroundColor));
@@ -334,105 +346,319 @@ test('complete trip lifecycle, receipts, exact shares and guest authorization', 
   await page.getByRole('button', { name: 'Settle up', exact: true }).last().click();
   await page.getByRole('button', { name: 'Payment', exact: true }).click();
   dialog = page.locator('dialog[open]');
-  await dialog.getByRole('combobox', { name: 'From', exact: true }).selectOption({ label: guest });
-  await dialog.getByLabel('Amount · CZK', { exact: true }).fill('500');
+  await dialog.getByRole('combobox', { name: 'Sender' }).click();
+  await expect(dialog.getByRole('option')).toHaveCount(2);
+  await page.screenshot({ path: 'test-results/payment-picker-open-mobile.png', fullPage: false });
+  await dialog.getByRole('combobox', { name: 'Sender' }).press('Escape');
+  await dialog.getByRole('combobox', { name: 'Receiver' }).click();
+  await expect(dialog.getByRole('option')).toHaveCount(2);
+  await dialog.getByRole('combobox', { name: 'Receiver' }).press('Escape');
+  const senderBounds = await dialog.getByRole('combobox', { name: 'Sender' }).boundingBox();
+  const receiverBounds = await dialog.getByRole('combobox', { name: 'Receiver' }).boundingBox();
+  const partyBounds = await dialog.locator('.payment-entry-parties').boundingBox();
+  const submitBounds = await dialog.locator('.payment-submit').boundingBox();
+  expect(
+    Math.abs(
+      (senderBounds!.x + receiverBounds!.x + receiverBounds!.width) / 2 -
+        (partyBounds!.x + partyBounds!.width / 2)
+    )
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(submitBounds!.x + submitBounds!.width / 2 - (partyBounds!.x + partyBounds!.width / 2))
+  ).toBeLessThan(1);
+  await page.screenshot({ path: 'test-results/payment-picker-mobile.png', fullPage: true });
+  await selectPaymentMember(dialog, 'Receiver', owner);
+  await expect(dialog.getByRole('button', { name: 'Confirm received' })).toBeDisabled();
+  await selectPaymentMember(dialog, 'Sender', guest);
+  await dialog.getByLabel('Amount · CZK', { exact: true }).fill('100');
+  await dialog.getByLabel('Note', { exact: true }).fill('Partial settlement');
   await dialog.getByRole('button', { name: 'Confirm received' }).click();
-  await expect(page.locator('.payment-row')).toContainText('500,00');
-  await expect(page.locator('.transfer-row .negative')).toHaveText(/−134,00/);
-  await expect(page.locator('.payment-row > .positive')).toHaveText(/\+500,00/);
-  await page.getByRole('button', { name: 'People', exact: true }).last().click();
+  await expect(page.locator('.paid-panel .payment-amount')).toHaveText(/100,00/);
+  await expect(page.locator('.paid-panel .payment-amount')).not.toHaveClass(/positive|negative/);
+  await expect(page.locator('.transfer-amount .positive')).toHaveText(/266,00/);
+  await expect(page.locator('.transfer-amount .settled-amount')).toHaveText(/366,00/);
+  await expect(page.locator('.paid-panel .payment-timeline time')).toHaveCount(2);
+  const amountPosition = await page.locator('.paid-panel .payment-amount').boundingBox();
+  const notePosition = await page.locator('.paid-panel .payment-note').boundingBox();
+  expect(notePosition!.y).toBeGreaterThanOrEqual(amountPosition!.y + amountPosition!.height);
+  await selectTripTab(page, 'People');
   const card = page
     .locator('.person-card')
     .filter({ has: page.locator('.name-bubble', { hasText: owner }) });
-  await expect(card.locator('.person-net.negative')).toHaveText(/−134,00/);
-  await expect(
-    card
+  await expect(card.locator('.person-net .positive')).toHaveText(/266,00/);
+  await expect(card.locator('.person-net .settled-amount')).toHaveText(/366,00/);
+  for (const [label, amount] of [
+    ['Share', '456,00'],
+    ['Purchases paid', '822,00'],
+    ['Received', '100,00']
+  ]) {
+    const value = card
       .locator('.person-details > span')
-      .filter({ hasText: /^Share/ })
-      .locator('strong.negative')
-  ).toHaveText(/−456,00/);
-  await expect(
-    card
-      .locator('.person-details > span')
-      .filter({ hasText: 'Purchases paid' })
-      .locator('strong.positive')
-  ).toHaveText(/\+822,00/);
-  await expect(
-    card
-      .locator('.person-details > span')
-      .filter({ hasText: 'Received' })
-      .locator('strong.negative')
-  ).toHaveText(/−500,00/);
-  await page.screenshot({ path: 'test-results/people-signed-mobile.png', fullPage: true });
-  await page.getByRole('button', { name: 'Settle up', exact: true }).last().click();
-
-  // The sender, including the trip owner, cannot approve outgoing money.
-  const guestMember = await page.locator('.payment-row').count();
-  expect(guestMember).toBe(1);
-  await expect(page.getByRole('button', { name: 'Confirm received', exact: true })).toHaveCount(0);
-  await gp.reload();
-  await expect(gp.locator('html[data-hydrated=true]')).toHaveCount(1);
-  await gp.getByRole('button', { name: 'Settle up', exact: true }).last().click();
-  await gp.getByRole('button', { name: 'Confirm received', exact: true }).click();
-  let receiverDialog = gp.locator('dialog[open]');
-  const receiverMember = await receiverDialog.locator('input[name=to]').inputValue();
-  const forgedOutgoing = await page.request.post(`${tripPath}?/payment`, {
-    form: { from: ownerMember, to: receiverMember, amount: '134', date: '2026-11-20' },
-    headers: {
-      origin: 'http://127.0.0.1:5180',
-      'x-sveltekit-action': 'true',
-      accept: 'application/json'
-    }
-  });
-  expect(forgedOutgoing.status()).toBe(403);
-  const forgedSender = await guestContext.request.post(`${tripPath}?/payment`, {
-    form: { from: receiverMember, to: ownerMember, amount: '1', date: '2026-11-20' },
-    headers: {
-      origin: 'http://127.0.0.1:5180',
-      'x-sveltekit-action': 'true',
-      accept: 'application/json'
-    }
-  });
-  expect(forgedSender.status()).toBe(403);
-  await receiverDialog.getByRole('button', { name: 'Confirm received', exact: true }).click();
-  await expect(gp.locator('.success-state')).toContainText('All square.');
-  await gp.getByRole('button', { name: 'Undo payment', exact: true }).click();
-  const confirmedIncoming = await gp.locator('dialog[open] input[name=id]').inputValue();
-  await gp.locator('dialog[open]').getByRole('button', { name: 'Cancel', exact: true }).click();
-  const forgedUndo = await page.request.post(`${tripPath}?/undoPayment`, {
-    form: { id: confirmedIncoming },
-    headers: {
-      origin: 'http://127.0.0.1:5180',
-      'x-sveltekit-action': 'true',
-      accept: 'application/json'
-    }
-  });
-  expect(forgedUndo.status()).toBe(403);
-  await gp.getByRole('button', { name: 'Undo payment', exact: true }).click();
-  await expect(gp.locator('.payment-row')).toHaveCount(2);
-  await gp
-    .locator('dialog[open]')
-    .getByRole('button', { name: 'Undo payment', exact: true })
-    .click();
-  await expect(gp.locator('.transfer-row')).toContainText('134,00');
-  await page.reload();
-  await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Settle up', exact: true }).last().click();
-  await page.getByRole('button', { name: 'Undo payment', exact: true }).click();
-  await page.locator('dialog[open]').getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(page.locator('.payment-row')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Undo payment', exact: true }).click();
-  await page
-    .locator('dialog[open]')
-    .getByRole('button', { name: 'Undo payment', exact: true })
-    .click();
-  await expect(page.locator('.payment-row')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Confirm received' }).first().click();
+      .filter({ hasText: label })
+      .locator('strong');
+    await expect(value).toHaveText(new RegExp(amount));
+    await expect(value).not.toHaveClass(/positive|negative/);
+  }
+  await page.screenshot({ path: 'test-results/people-partial-mobile.png', fullPage: true });
+  await selectTripTab(page, 'Settle up');
+  await page.getByRole('button', { name: 'Payment', exact: true }).first().click();
   dialog = page.locator('dialog[open]');
-  await dialog.getByRole('button', { name: 'Confirm received' }).click();
+  await selectPaymentMember(dialog, 'Sender', guest);
+  await expect(dialog.getByRole('combobox', { name: 'Receiver' })).toBeDisabled();
+  await expect(dialog.getByRole('combobox', { name: 'Receiver' })).toHaveText(owner);
+  await dialog.getByLabel('Amount · CZK', { exact: true }).fill('100');
+  await expect(dialog.getByRole('status')).toHaveText('Same amount is already Received');
+  await close(page);
+
+  // The sender records a pending transfer. Only the receiver can approve it.
+  await gp.reload();
+  await selectTripTab(gp, 'Settle up');
+  await gp.locator('.unpaid-panel').getByRole('button', { name: 'Settle', exact: true }).click();
+  let receiverDialog = gp.locator('dialog[open]');
+  await expect(receiverDialog.getByRole('combobox', { name: 'Sender' })).toHaveText(guest);
+  await expect(receiverDialog.getByRole('combobox', { name: 'Receiver' })).toHaveText(owner);
+  await receiverDialog.getByRole('button', { name: 'Add payment', exact: true }).click();
+  await expect(gp.locator('.pending-panel .payment-row')).toHaveCount(1);
+  await expect(gp.locator('.pending-panel .payment-timeline time')).toHaveCount(1);
+  await expect(
+    gp.locator('.pending-panel').getByRole('button', { name: 'Confirm received' })
+  ).toHaveCount(0);
+  await expect(gp.locator('.success-state')).toContainText('Awaiting confirmation');
+  await page.reload();
+  await selectTripTab(page, 'Settle up');
+  const pendingId = await page.locator('.pending-panel input[name=id]').inputValue();
+  expect(
+    (
+      await guestContext.request.post(`${tripPath}?/confirmPayment`, { form: { id: pendingId } })
+    ).status()
+  ).toBe(403);
+  await page.getByRole('button', { name: 'Payment', exact: true }).click();
+  dialog = page.locator('dialog[open]');
+  await selectPaymentMember(dialog, 'Sender', guest);
+  await expect(dialog.getByRole('combobox', { name: 'Receiver' })).toBeDisabled();
+  await expect(dialog.getByRole('combobox', { name: 'Receiver' })).toHaveText(owner);
+  await dialog.getByLabel('Amount · CZK', { exact: true }).fill('266');
+  await expect(dialog.getByRole('status')).toHaveText('Same amount is already Pending');
+  await close(page);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const pendingAmountPosition = await page.locator('.pending-panel .payment-amount').boundingBox();
+  const confirmationPosition = await page
+    .locator('.pending-panel')
+    .getByRole('button', { name: 'Confirm received' })
+    .boundingBox();
+  expect(confirmationPosition!.y).toBeGreaterThanOrEqual(
+    pendingAmountPosition!.y + pendingAmountPosition!.height
+  );
+  await page.screenshot({ path: 'test-results/payment-pending-mobile.png', fullPage: true });
+  await page.locator('.pending-panel').getByRole('button', { name: 'Confirm received' }).click();
+  await expect(page.locator('.paid-panel .payment-row')).toHaveCount(2);
+  await expect(page.locator('.pending-panel .payment-row')).toHaveCount(0);
   await expect(page.locator('.success-state')).toContainText('All square.');
+  await gp.reload();
+  await selectTripTab(gp, 'Settle up');
+  await gp.getByRole('button', { name: 'Payment', exact: true }).click();
+  receiverDialog = gp.locator('dialog[open]');
+  await receiverDialog.getByLabel('Amount · CZK', { exact: true }).fill('266');
+  await expect(receiverDialog.getByRole('status')).toHaveText('Same amount is already Sent');
+  await gp.screenshot({ path: 'test-results/payment-duplicate-sent.png', fullPage: true });
+  await close(gp);
+  await selectTripTab(page, 'People');
+  await expect(card.locator('.person-net')).toHaveText(/366,00/);
+  await expect(card.locator('.person-net .positive,.person-net .negative')).toHaveCount(0);
+  await expect(card.locator('.person-status')).toHaveText('All square');
+  await selectTripTab(page, 'Settle up');
+  await page.screenshot({ path: 'test-results/settlements-mobile.png', fullPage: true });
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.screenshot({ path: 'test-results/settlements-desktop.png', fullPage: true });
+
+  // Both parties can move Paid back to Pending; removing Pending deletes it.
+  await page
+    .locator('.paid-panel .payment-row')
+    .filter({ hasText: '266,00' })
+    .getByRole('button', { name: 'Move to Pending' })
+    .click();
+  await page.locator('dialog[open]').getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.locator('.paid-panel .payment-row')).toHaveCount(2);
+  await page
+    .locator('.paid-panel .payment-row')
+    .filter({ hasText: '266,00' })
+    .getByRole('button', { name: 'Move to Pending' })
+    .click();
+  await page
+    .locator('dialog[open]')
+    .getByRole('button', { name: 'Move to Pending', exact: true })
+    .click();
+  await expect(page.locator('.pending-panel .payment-row')).toHaveCount(1);
+  await gp.reload();
+  await selectTripTab(gp, 'Settle up');
+  await gp.locator('.pending-panel').getByRole('button', { name: 'Remove payment' }).click();
+  await gp
+    .locator('dialog[open]')
+    .getByRole('button', { name: 'Remove payment', exact: true })
+    .click();
+  await expect(gp.locator('.pending-panel .payment-row')).toHaveCount(0);
+  await expect(gp.locator('.transfer-amount .negative')).toHaveText(/266,00/);
+  await gp.locator('.paid-panel').getByRole('button', { name: 'Move to Pending' }).click();
+  await gp
+    .locator('dialog[open]')
+    .getByRole('button', { name: 'Move to Pending', exact: true })
+    .click();
+  await page.reload();
+  await selectTripTab(page, 'Settle up');
+  await page.locator('.pending-panel').getByRole('button', { name: 'Remove payment' }).click();
+  await page
+    .locator('dialog[open]')
+    .getByRole('button', { name: 'Remove payment', exact: true })
+    .click();
+  await expect(page.locator('.payment-row')).toHaveCount(0);
+  await expect(page.locator('.transfer-amount .positive')).toHaveText(/366,00/);
+
+  // Settlement actions and recording payments are limited to your own transfers.
+  await page.goto('/');
+  const permissions = await createFixtureTrip(page, { purchase: true });
+  await page.request.post(`${permissions.path}?/member`, { form: { name: guest } });
+  await page.reload();
+  await selectTripTab(page, 'Settle up');
+  await expect(page.locator('.transfer-row')).toHaveCount(3);
+  await expect(
+    page.locator('.unpaid-panel').getByRole('button', { name: 'Settle', exact: true })
+  ).toHaveCount(1);
+  for (const row of await page.locator('.transfer-row').all()) {
+    const involved = (await row.innerText()).includes(owner);
+    await expect(row.getByRole('button', { name: 'Settle', exact: true })).toHaveCount(
+      involved ? 1 : 0
+    );
+  }
+  await page.getByRole('button', { name: 'Payment', exact: true }).click();
+  dialog = page.locator('dialog[open]');
+  const localOwner = await dialog.locator('input[name=from]').inputValue();
+  await dialog.getByRole('combobox', { name: 'Receiver' }).click();
+  await page.screenshot({ path: 'test-results/payment-picker-open-desktop.png', fullPage: false });
+  await selectPaymentMember(dialog, 'Receiver', guest);
+  const receiver = await dialog.locator('input[name=to]').inputValue();
+  await selectPaymentMember(dialog, 'Sender', 'Jamie');
+  const thirdSender = await dialog.locator('input[name=from]').inputValue();
+  await expect(dialog.getByRole('combobox', { name: 'Receiver' })).toBeDisabled();
+  await expect(dialog.getByRole('combobox', { name: 'Receiver' })).toHaveText(owner);
+  await expect(dialog.locator('input[name=to]')).toHaveValue(localOwner);
+  await selectPaymentMember(dialog, 'Sender', owner);
+  await expect(dialog.getByRole('combobox', { name: 'Receiver' })).toBeEnabled();
+  await selectPaymentMember(dialog, 'Receiver', guest);
+  await close(page);
+  expect(
+    (
+      await page.request.post(`${permissions.path}?/payment`, {
+        form: { from: thirdSender, to: receiver, amount: '10', date: '2026-11-20' }
+      })
+    ).status()
+  ).toBe(403);
+
+  // A trip owner outside the payment cannot confirm, undo or delete it either.
+  await gp.goto(permissions.path);
+  expect(
+    (
+      await guestContext.request.post(`${permissions.path}?/payment`, {
+        form: {
+          from: thirdSender,
+          to: localOwner,
+          amount: '10',
+          date: '2026-11-20'
+        }
+      })
+    ).status()
+  ).toBe(403);
+  expect(
+    (
+      await guestContext.request.post(`${permissions.path}?/payment`, {
+        form: { from: thirdSender, to: receiver, amount: '10', date: '2026-11-20' }
+      })
+    ).status()
+  ).toBe(200);
+  await gp.reload();
+  await selectTripTab(gp, 'Settle up');
+  await gp.locator('.paid-panel').getByRole('button', { name: 'Move to Pending' }).click();
+  const thirdId = await gp.locator('dialog[open] input[name=id]').inputValue();
+  await gp
+    .locator('dialog[open]')
+    .getByRole('button', { name: 'Move to Pending', exact: true })
+    .click();
+  expect(
+    (
+      await page.request.post(`${permissions.path}?/confirmPayment`, { form: { id: thirdId } })
+    ).status()
+  ).toBe(403);
+  expect(
+    (
+      await page.request.post(`${permissions.path}?/undoPayment`, {
+        form: { id: thirdId, state: 'pending' }
+      })
+    ).status()
+  ).toBe(403);
+  await gp.locator('.pending-panel').getByRole('button', { name: 'Confirm received' }).click();
+  expect(
+    (
+      await page.request.post(`${permissions.path}?/undoPayment`, {
+        form: { id: thirdId, state: 'paid' }
+      })
+    ).status()
+  ).toBe(403);
+  expect(
+    (
+      await guestContext.request.post(`${permissions.path}?/undoPayment`, {
+        form: { id: thirdId, state: 'pending' }
+      })
+    ).status()
+  ).toBe(400);
+  expect(
+    (
+      await guestContext.request.post(`${permissions.path}?/undoPayment`, {
+        form: { id: thirdId, state: 'paid' }
+      })
+    ).status()
+  ).toBe(200);
+  expect(
+    (
+      await guestContext.request.post(`${permissions.path}?/undoPayment`, {
+        form: { id: thirdId, state: 'pending' }
+      })
+    ).status()
+  ).toBe(200);
+  // The owner may record sent payments, but cannot forge receiver confirmation.
+  expect(
+    (
+      await page.request.post(`${permissions.path}?/payment`, {
+        form: {
+          from: localOwner,
+          to: receiver,
+          amount: '20',
+          date: '2026-11-20',
+          confirmed_at: '2026-11-20'
+        }
+      })
+    ).status()
+  ).toBe(200);
+  await gp.reload();
+  await selectTripTab(gp, 'Settle up');
+  const ownerPending = await gp.locator('.pending-panel input[name=id]').inputValue();
+  expect(
+    (
+      await page.request.post(`${permissions.path}?/confirmPayment`, { form: { id: ownerPending } })
+    ).status()
+  ).toBe(403);
+  expect(
+    (
+      await page.request.post(`${permissions.path}?/payment`, {
+        form: { from: thirdSender, to: ownerMember, amount: '20', date: '2026-11-20' }
+      })
+    ).status()
+  ).toBe(400);
+  expect(
+    (
+      await page.request.post(`${permissions.path}?/payment`, {
+        form: { from: receiver, to: receiver, amount: '20', date: '2026-11-20' }
+      })
+    ).status()
+  ).toBe(400);
   expect(errors).toEqual([]);
   await guestContext.close();
 });
@@ -551,12 +777,48 @@ test('all trip members can manage settings, invitations, expenses and tags', asy
   }
 });
 
-test('expense buyers, personal participation and clean home', async ({ page }) => {
+test('Home navigation, expense buyers and personal participation', async ({ page }) => {
   await login(page, 'taylor');
   await page.screenshot({ path: 'test-results/home-desktop.png', fullPage: true });
   await expect(page.getByRole('button', { name: 'Sample trip', exact: true })).toHaveCount(0);
   expect((await page.request.post('/?/demo')).status()).toBe(404);
-  await createFixtureTrip(page, { purchase: true });
+  const trip = await createFixtureTrip(page, { purchase: true });
+  await page.reload();
+  await expect(page.locator('html[data-hydrated=true]')).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: trip.name, exact: true })).toBeVisible();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await selectTripTab(page, 'Home');
+    if (width === 390)
+      expect(
+        await page.locator('.mobile-tabs').evaluate((el) => el.scrollWidth <= el.clientWidth)
+      ).toBe(true);
+    await expect(page.getByRole('heading', { name: trip.name, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Home', exact: true })).toHaveClass('active');
+    await expect(page.getByRole('button', { name: 'Trip settings', exact: true })).toBeVisible();
+    await expect(page.locator('.trip-subtitle')).toContainText('3 nights');
+    await expect(page.locator('.trip-meta-row .name-bubble')).toHaveCount(4);
+    await expect(page.getByRole('region', { name: 'Trip totals' })).toContainText('86,40');
+    await expect(page.locator('.expense-table')).toHaveCount(0);
+    const details = await page.locator('.trip-subtitle').boundingBox();
+    const people = await page.locator('.name-list').boundingBox();
+    expect(people!.y).toBeGreaterThan(details!.y + details!.height);
+    await page.screenshot({ path: `test-results/trip-home-${width}.png`, fullPage: true });
+    await page.getByRole('button', { name: 'Settle', exact: true }).click();
+    await expect(page.locator('.trip-heading,.stats')).toHaveCount(0);
+    for (const name of ['Expenses', 'People', 'Receipts', 'Settle up']) {
+      await selectTripTab(page, name);
+      await expect(page.locator('.trip-heading,.stats')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Trip settings' })).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true
+      );
+    }
+    await selectTripTab(page, 'Expenses');
+    await expect(page.locator('.expense-row')).toContainText('Shared purchase');
+    await page.screenshot({ path: `test-results/trip-expenses-${width}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 1050 });
   const groceries = page.locator('.expense-row').filter({ hasText: 'Shared purchase' });
   await expect(groceries.locator('.paid-by')).toContainText('Jamie');
   await groceries.click();

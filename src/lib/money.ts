@@ -74,7 +74,7 @@ export function balances(
   members: Member[],
   expenses: Expense[],
   tags: Tag[],
-  payments: { from_id: string; to_id: string; amount: number }[]
+  payments: { from_id: string; to_id: string; amount: number; confirmed_at?: string | null }[]
 ): Balance[] {
   const rows = new Map(
     members.map((m) => [m.id, { id: m.id, spent: 0, share: 0, sent: 0, received: 0, net: 0 }])
@@ -84,10 +84,53 @@ export function balances(
     for (const [id, share] of allocate(expense, members, tags)) rows.get(id)!.share += share;
   }
   for (const p of payments) {
+    if (p.confirmed_at === null) continue;
     rows.get(p.from_id)!.sent += p.amount;
     rows.get(p.to_id)!.received += p.amount;
   }
   return [...rows.values()].map((r) => ({ ...r, net: r.spent + r.sent - r.received - r.share }));
+}
+
+// Reserve pending transfers in the payment plan without treating them as received
+// in balances. Keep each pair's original total visible after partial payments.
+export function settlementProgress(
+  members: Member[],
+  expenses: Expense[],
+  tags: Tag[],
+  payments: { from_id: string; to_id: string; amount: number; confirmed_at?: string | null }[]
+) {
+  const original = settle(balances(members, expenses, tags, []));
+  const reserved = balances(members, expenses, tags, payments);
+  const pendingReservations = new Map<number, number>();
+  payments.forEach((payment, index) => {
+    if (payment.confirmed_at !== null) return;
+    const sender = reserved.find((row) => row.id === payment.from_id)!;
+    const receiver = reserved.find((row) => row.id === payment.to_id)!;
+    const amount = Math.max(0, Math.min(payment.amount, -sender.net, receiver.net));
+    sender.net += amount;
+    receiver.net -= amount;
+    pendingReservations.set(index, amount);
+  });
+  const plan = settle(reserved);
+  return {
+    ...plan,
+    transfers: plan.transfers.map((transfer) => {
+      const paid = payments.reduce(
+        (sum, payment, index) =>
+          sum +
+          (payment.from_id === transfer.from && payment.to_id === transfer.to
+            ? (pendingReservations.get(index) ?? payment.amount)
+            : payment.to_id === transfer.from && payment.from_id === transfer.to
+              ? -(pendingReservations.get(index) ?? payment.amount)
+              : 0),
+        0
+      );
+      const initial =
+        original.transfers.find((item) => item.from === transfer.from && item.to === transfer.to)
+          ?.amount ?? 0;
+      return { ...transfer, total: Math.max(initial, transfer.amount + paid, transfer.amount) };
+    })
+  };
 }
 
 // Exact minimum-transfer debt clearing with symmetry pruning. A search budget

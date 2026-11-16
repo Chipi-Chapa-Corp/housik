@@ -2431,7 +2431,7 @@ dialog {
   }
   .mobile-tabs {
     display: flex;
-    gap: 15px;
+    gap: 10px;
     overflow-x: auto;
     margin-bottom: 24px;
   }
@@ -2684,17 +2684,14 @@ dialog {
   flex-shrink: 0;
 }
 .trip-meta-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-  flex-wrap: wrap;
   margin-top: 16px;
 }
 .trip-meta-row .trip-subtitle {
   margin: 0;
-  flex: 1;
-  min-width: 200px;
+  min-width: 0;
 }
 .trip-meta-row > .avatar-stack {
   display: flex;
@@ -2732,9 +2729,6 @@ dialog {
   }
   .trip-title-row {
     align-items: flex-start;
-  }
-  .trip-meta-row .trip-subtitle {
-    min-width: 200px;
   }
   .avatar-stack .avatar {
     width: 32px;
@@ -2778,6 +2772,7 @@ dialog {
   justify-content: flex-end;
 }
 .trip-meta-row .name-list {
+  justify-content: flex-start;
   min-width: 0;
   max-width: 100%;
 }
@@ -3338,4 +3333,128 @@ nav button.active {
 .invite-user {
   display: flex;
   align-items: center;
+}
+
+.balance-amount {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+.settled-amount {
+  color: var(--text, #303740);
+}
+.payment-entry-parties {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) auto minmax(0, max-content);
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.payment-submit {
+  align-self: center;
+  min-width: min(220px, 100%);
+  max-width: 100%;
+}
+.payment-warning {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f5eddc;
+  color: #604b22;
+}
+.payment-row,
+.payment-row:has(form),
+.payment-row:has(.payment-undo) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+}
+.payment-row > div {
+  min-width: 0;
+  flex: none;
+}
+.payment-row > .payment-parties {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  grid-column: 1;
+  grid-row: 1;
+}
+.payment-row > .payment-amount {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  text-align: right;
+}
+.payment-row > .payment-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  grid-column: 3;
+  grid-row: 1;
+}
+.payment-row .icon-btn {
+  width: 32px;
+  height: 32px;
+}
+.payment-row > .payment-note {
+  grid-column: 1 / -1;
+  grid-row: auto;
+  margin: 0;
+  color: #4b5056;
+}
+.payment-row > .payment-timeline {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  grid-column: 1 / -1;
+  color: #4b5056;
+}
+.payment-timeline > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.payment-timeline svg {
+  flex-shrink: 0;
+}
+@media (max-width: 600px) {
+  .payment-row,
+  .payment-row:has(form),
+  .payment-row:has(.payment-undo) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .payment-row > .payment-parties {
+    grid-column: 1 / -1;
+  }
+  .payment-row > .payment-amount {
+    grid-column: 1;
+    grid-row: 2;
+    text-align: left;
+  }
+  .payment-row > .payment-actions {
+    display: contents;
+  }
+  .payment-actions > form {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .payment-actions > form > .btn {
+    width: 100%;
+  }
+  .payment-actions > .payment-undo {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
+}
+.negative {
+  color: #b32e32 !important;
 }

@@ -1,3 +1,4 @@
+import { selectTripTab } from './fixtures';
 import { test, expect, type Page } from '@playwright/test';
 
 async function open(page: Page) {
@@ -68,6 +69,7 @@ test('dynamic dialogs keep URL, date and amount errors visible', async ({ page }
   await expect(dialog.locator('.field-error')).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Create trip' }).click();
   await expect(page).toHaveURL(/\/trip\//);
+  await selectTripTab(page, 'Expenses');
   await page.getByRole('button', { name: 'Add expense', exact: true }).click();
   const amount = dialog.locator('input[name=amount]');
   await amount.fill('12.345');
